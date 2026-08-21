@@ -70,7 +70,7 @@ variable "private_db_subnet_cidr_2" {
 variable "instance_type" {
   description = "EC2 instance type for backend workloads"
   type        = string
-  default     = "t3.micro"
+  default     = "t3.small"
 }
 
 # 4. Database (RDS Multi-AZ MySQL)
