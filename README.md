@@ -62,7 +62,7 @@ Commit and push your code to the `dev` branch:
 
 ```bash
 git add .
-git commit -m "feat: complete production infrastructure and app deployment"
+git commit -m "complete production infrastructure and app deployment"
 git push origin dev
 
 ```

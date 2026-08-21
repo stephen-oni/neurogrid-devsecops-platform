@@ -85,7 +85,7 @@ jobs:
 
       - name: Sync Static Web Assets to S3
         run: |
-          aws s3 sync ./frontend s3://${{ needs.terraform.outputs.s3_bucket }} --delete
+          aws s3 sync ./frontend s3://${{ needs.terraform.outputs.s3_bucket }} --delete --exclude ".git*" --exclude "*.md"
 
       - name: Purge CloudFront Edge Cache
         run: |
@@ -101,6 +101,9 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -112,14 +115,15 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, Tag, and Push Backend Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: neurogrid-backend
-          IMAGE_TAG: latest
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./backend
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Build, Tag, and Push Backend Image (Cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/neurogrid-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     name: "Deploy App to ASG via AWS SSM"
@@ -140,13 +144,14 @@ jobs:
 
       - name: Execute Deployment across ASG Nodes via SSM
         run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           tar -czf app-files.tar.gz docker-compose.yml init.sql monitoring/
           FILE_B64=$(base64 -w 0 app-files.tar.gz)
 
           COMMAND_ID=$(aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=${{ needs.terraform.outputs.asg_name }}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy NeuroGrid Services via Docker Compose" \
+            --comment "Fast Deploy NeuroGrid Services via Docker Compose" \
             --parameters commands="[
               \"export PATH=\$PATH:/usr/local/bin:/snap/bin\",
               \"cloud-init status --wait\",
@@ -154,18 +159,14 @@ jobs:
               \"cd /home/ubuntu/app\",
               \"echo '${FILE_B64}' | base64 -d > app-files.tar.gz\",
               \"tar -xzf app-files.tar.gz\",
-              \"rm app-files.tar.gz\",
-              \"echo 'ECR_REGISTRY=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com' > .env\",
-              \"echo 'RDS_ENDPOINT=${{ needs.terraform.outputs.rds_endpoint }}' >> .env\",
-              \"echo 'DB_HOST=${{ needs.terraform.outputs.rds_endpoint }}' >> .env\",
-              \"echo 'DB_USER=${{ secrets.DB_USER }}' >> .env\",
-              \"echo 'DB_PASSWORD=${{ secrets.DB_PASSWORD }}' >> .env\",
-              \"echo 'DB_NAME=${{ secrets.DB_NAME }}' >> .env\",
-              \"echo 'SECRET_KEY=${{ secrets.SECRET_KEY }}' >> .env\",
-              \"docker run --rm -e MYSQL_PWD='${{ secrets.DB_PASSWORD }}' -v /home/ubuntu/app/init.sql:/init.sql mysql:8.0 mysql -h ${{ needs.terraform.outputs.rds_endpoint }} -u ${{ secrets.DB_USER }} -D ${{ secrets.DB_NAME }} -e 'source /init.sql'\",
-              \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\",
-              \"docker compose pull\",
-              \"docker compose up -d --remove-orphans\"
+              \"rm -f app-files.tar.gz\",
+              \"printf 'ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\nRDS_ENDPOINT=${{ needs.terraform.outputs.rds_endpoint }}\nDB_HOST=${{ needs.terraform.outputs.rds_endpoint }}\nDB_USER=${{ secrets.DB_USER }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}\nDB_NAME=${{ secrets.DB_NAME }}\nSECRET_KEY=${{ secrets.SECRET_KEY }}\n' > .env\",
+              \"which mysql >/dev/null 2>&1 || (DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-client)\",
+              \"mysql -h ${{ needs.terraform.outputs.rds_endpoint }} -u ${{ secrets.DB_USER }} -p'${{ secrets.DB_PASSWORD }}' ${{ secrets.DB_NAME }} < init.sql || true\",
+              \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\",
+              \"docker compose pull --parallel\",
+              \"docker compose up -d --remove-orphans\",
+              \"docker image prune -af --filter 'until=24h'\"
             ]" \
             --query "Command.CommandId" \
             --output text)

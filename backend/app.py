@@ -53,14 +53,14 @@ def get_client_ip():
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
     return request.headers.get('X-Real-IP', request.remote_addr)
 
-# ================= HEALTH & METRICS =================
+#  HEALTH & METRICS 
 
 @app.route('/health', methods=['GET'])
 def health():
     """ALB root health check endpoint."""
     return jsonify({"status": "healthy"}), 200
 
-# ================= AUTHENTICATION ENDPOINTS =================
+#  AUTHENTICATION ENDPOINTS 
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
@@ -79,12 +79,12 @@ def signup():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Security Rule 1: Enforce 1 account per IP
+        #  Enforce 1 account per IP
         cursor.execute("SELECT id FROM users WHERE ip_address = %s", (user_ip,))
         if cursor.fetchone():
             return jsonify({"status": "error", "message": "An account has already been created from this IP address."}), 403
             
-        # Security Rule 2: Enforce unique username
+        #  Enforce unique username
         cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
         if cursor.fetchone():
             return jsonify({"status": "error", "message": "Username is already taken."}), 409
@@ -169,7 +169,7 @@ def logout():
     session.pop('user', None)
     return jsonify({"status": "success", "message": "Logged out successfully"}), 200
 
-# ================= ELIGIBILITY FORM ENDPOINTS =================
+# ELIGIBILITY FORM ENDPOINTS 
 
 @app.route('/api/eligibility/submit', methods=['POST'])
 def submit_eligibility():
