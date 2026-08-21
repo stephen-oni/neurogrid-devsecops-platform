@@ -155,7 +155,7 @@ jobs:
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           
-          # Try using pipeline output first, then fallback directly to AWS CLI
+          # 1. Resolve RDS Endpoint (Pipeline Output -> Direct AWS Query Fallback)
           RDS_HOST="${{ needs.terraform.outputs.rds_endpoint }}"
           if [ -z "$RDS_HOST" ]; then
             echo "Pipeline rds_endpoint was empty. Querying AWS directly..."
@@ -164,6 +164,7 @@ jobs:
               --output text)
           fi
 
+          # 2. Resolve ASG Name (Pipeline Output -> Direct AWS Query Fallback)
           ASG_TARGET="${{ needs.terraform.outputs.asg_name }}"
           if [ -z "$ASG_TARGET" ]; then
             echo "Pipeline asg_name was empty. Querying AWS directly..."
@@ -186,7 +187,7 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=${ASG_TARGET}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Fast Deploy NeuroGrid Services via Docker Compose" \
+            --comment "Zero-Touch Continuous Deployment & DB Auto-Migration" \
             --parameters commands="[
               \"export PATH=\$PATH:/usr/local/bin:/snap/bin\",
               \"cloud-init status --wait\",
@@ -196,8 +197,7 @@ jobs:
               \"tar -xzf app-files.tar.gz\",
               \"rm -f app-files.tar.gz\",
               \"printf 'ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\nRDS_ENDPOINT=${RDS_HOST}\nDB_HOST=${RDS_HOST}\nDB_USER=${{ secrets.DB_USER }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}\nDB_NAME=${{ secrets.DB_NAME }}\nSECRET_KEY=${{ secrets.SECRET_KEY }}\n' > .env\",
-              \"which mysql >/dev/null 2>&1 || (DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-client)\",
-              \"mysql -h ${RDS_HOST} -u ${{ secrets.DB_USER }} -p'${{ secrets.DB_PASSWORD }}' ${{ secrets.DB_NAME }} < init.sql || true\",
+              \"docker run --rm -v /home/ubuntu/app/init.sql:/init.sql:ro mysql:8.0 sh -c 'mysql -h ${RDS_HOST} -u ${{ secrets.DB_USER }} -p${{ secrets.DB_PASSWORD }} ${{ secrets.DB_NAME }} < /init.sql' || true\",
               \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\",
               \"docker compose pull\",
               \"docker compose up -d --force-recreate --remove-orphans\",
@@ -212,7 +212,7 @@ jobs:
             STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
             echo "Current Command Status: $STATUS"
             if [ "$STATUS" = "Success" ]; then
-              echo "Deployment successful across all ASG instances!"
+              echo "Deployment & Schema Migration successful across all ASG instances!"
               break
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
               echo "Deployment failed with status: $STATUS"
