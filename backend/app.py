@@ -78,6 +78,58 @@ def get_db_connection():
     pool = get_db_pool()
     return pool.get_connection()
 
+def init_db():
+    """Automatically create required tables on startup if they do not exist."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Users table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(100) NOT NULL UNIQUE,
+                password VARCHAR(255) NOT NULL,
+                ip_address VARCHAR(45) NOT NULL,
+                failed_attempts INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Neural Assessments table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS neural_assessments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                synapse_speed_ms INT NOT NULL,
+                rejection_tolerance_pct INT NOT NULL,
+                cortex_voltage DECIMAL(5,2) NOT NULL,
+                nanite_count INT NOT NULL,
+                compatibility_score INT NOT NULL,
+                implant_tier VARCHAR(100) NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        """)
+
+        conn.commit()
+        print("Database schema successfully verified/initialized.")
+    except Exception as e:
+        print(f"Warning: Database initialization failed during boot: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+# Auto-initialize database tables on container start
+try:
+    init_db()
+except Exception as e:
+    print(f"Startup DB init error: {e}")
+
 def get_client_ip():
     """Extract real client IP passed through CloudFront and ALB."""
     if request.headers.get('X-Forwarded-For'):
