@@ -6,21 +6,21 @@ from flask_cors import CORS
 from prometheus_flask_exporter import PrometheusMetrics
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
+import time
 import datetime
-
 
 app = Flask(__name__)
 
 # Correctly handle headers (X-Forwarded-For, X-Forwarded-Proto) from ALB & CloudFront
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-# Initialize Prometheus Metrics (Exposes /metrics on port 5000)
+# Initialize Prometheus Metrics (Exposes /metrics)
 metrics = PrometheusMetrics(app)
 
-# Allow credentials & cookies from frontend.
+# Allow credentials & cookies from frontend
 CORS(app, supports_credentials=True)
 
-# Shared secret key across all EC2 nodes (Required for multi-instance ASG sessions)
+# Shared secret key across all EC2 nodes
 app.secret_key = os.getenv('SECRET_KEY', 'neurogrid_production_fallback_secret_key_12345')
 bcrypt = Bcrypt(app)
 
@@ -32,20 +32,36 @@ app.config.update(
     SESSION_COOKIE_SECURE=True if is_production else False
 )
 
-# Database Connection Pool Configuration
-db_pool = mysql.connector.pooling.MySQLConnectionPool(
-    pool_name="neurogrid_pool",
-    pool_size=10,
-    pool_reset_session=True,
-    host=os.getenv('DB_HOST', 'db'),
-    user=os.getenv('DB_USER', 'root'),
-    password=os.getenv('DB_PASSWORD', 'dev_password_123'),
-    database=os.getenv('DB_NAME', 'neurogrid_db')
-)
+# Global pool reference initialized lazily with retries
+db_pool = None
+
+def get_db_pool():
+    global db_pool
+    if db_pool is None:
+        retries = 5
+        while retries > 0:
+            try:
+                db_pool = mysql.connector.pooling.MySQLConnectionPool(
+                    pool_name="neurogrid_pool",
+                    pool_size=10,
+                    pool_reset_session=True,
+                    host=os.getenv('DB_HOST', 'db'),
+                    user=os.getenv('DB_USER', 'root'),
+                    password=os.getenv('DB_PASSWORD', 'dev_password_123'),
+                    database=os.getenv('DB_NAME', 'neurogrid_db')
+                )
+                break
+            except Exception as e:
+                retries -= 1
+                time.sleep(2)
+                if retries == 0:
+                    raise e
+    return db_pool
 
 def get_db_connection():
     """Fetches an active connection from the pool."""
-    return db_pool.get_connection()
+    pool = get_db_pool()
+    return pool.get_connection()
 
 def get_client_ip():
     """Extract real client IP passed through CloudFront and ALB."""
@@ -53,14 +69,14 @@ def get_client_ip():
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
     return request.headers.get('X-Real-IP', request.remote_addr)
 
-#  HEALTH & METRICS 
+# HEALTH & METRICS 
 
 @app.route('/health', methods=['GET'])
 def health():
     """ALB root health check endpoint."""
     return jsonify({"status": "healthy"}), 200
 
-#  AUTHENTICATION ENDPOINTS 
+# AUTHENTICATION ENDPOINTS 
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
@@ -79,12 +95,12 @@ def signup():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        #  Enforce 1 account per IP
+        # Enforce 1 account per IP
         cursor.execute("SELECT id FROM users WHERE ip_address = %s", (user_ip,))
         if cursor.fetchone():
             return jsonify({"status": "error", "message": "An account has already been created from this IP address."}), 403
             
-        #  Enforce unique username
+        # Enforce unique username
         cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
         if cursor.fetchone():
             return jsonify({"status": "error", "message": "Username is already taken."}), 409
@@ -158,7 +174,7 @@ def login():
 
 @app.route('/api/user', methods=['GET'])
 def get_user():
-    """Validates the active session for frontend page guards and ALB health probe."""
+    """Validates the active session for frontend page guards."""
     if 'user' in session:
         return jsonify({"status": "success", "username": session['user']}), 200
     return jsonify({"status": "error", "message": "Not authenticated"}), 401

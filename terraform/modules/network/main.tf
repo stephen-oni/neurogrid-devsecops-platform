@@ -314,14 +314,14 @@ resource "aws_lb_target_group" "api_tg" {
 
   health_check {
     enabled             = true
-    path                = "/api/user"
+    path                = "/health"
     protocol            = "HTTP"
     port                = "80"
-    matcher             = "200,401"
-    interval            = 30
+    matcher             = "200"
+    interval            = 15
     timeout             = 5
     healthy_threshold   = 2
-    unhealthy_threshold = 3
+    unhealthy_threshold = 2
   }
 
   tags = {
@@ -329,7 +329,6 @@ resource "aws_lb_target_group" "api_tg" {
   }
 }
 
-# bad approach but still learning because if they get my ALB ARN.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.api_alb.arn
   port              = 80
