@@ -51,7 +51,7 @@ Navigate to **Settings > Secrets and variables > Actions** in your GitHub reposi
 * `AWS_ACCOUNT_ID`: 12-digit AWS Account ID.
 * `DB_USER`: Master RDS MySQL username (use `admin`; AWS reserves `root`).
 * `DB_PASSWORD`: Master password for your RDS MySQL instance.
-* `DB_NAME`: Database name (e.g., `neurogrid_db`).
+* `DB_NAME`: Database name (e.g., `neurogrid_db`)..
 * `SECRET_KEY`: Cryptographic secret string generated for Flask session integrity.
 
 ---
