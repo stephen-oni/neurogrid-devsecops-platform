@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroGrid OS // Clearance Evaluation Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #070913;
+            --bg-card: rgba(14, 20, 36, 0.85);
+            --cyan: #00f0ff;
+            --pink: #ff007f;
+            --purple: #8a2be2;
+            --green: #00ff88;
+            --amber: #ffaa00;
+            --red: #ff3344;
+            --text-main: #d0f7ff;
+            --text-dim: #5c7f99;
+            --border-glow: rgba(0, 240, 255, 0.35);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 80% 20%, rgba(0, 255, 136, 0.1), transparent 45%),
+                radial-gradient(circle at 20% 80%, rgba(0, 240, 255, 0.1), transparent 45%),
+                linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.85));
+        }
+
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 999;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border-glow);
+            background: rgba(7, 9, 19, 0.85);
+            backdrop-filter: blur(12px);
+            padding: 1rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+        }
+
+        .brand-badge {
+            background: var(--pink);
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 0.8rem;
+            padding: 0.25rem 0.6rem;
+            letter-spacing: 2px;
+        }
+
+        .brand-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #fff;
+            text-shadow: 0 0 12px var(--cyan);
+        }
+
+        .user-panel {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .nav-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover { color: var(--cyan); text-shadow: 0 0 8px var(--cyan); }
+
+        .btn-logout {
+            background: transparent;
+            border: 1px solid var(--red);
+            color: var(--red);
+            padding: 0.35rem 0.8rem;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-logout:hover {
+            background: var(--red);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(255, 51, 68, 0.5);
+        }
+
+        main {
+            flex: 1;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 3rem 1.5rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 6px;
+            padding: 2.5rem;
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.1);
+            position: relative;
+            margin-bottom: 2rem;
+        }
+
+        .card::before {
+            content: "RDS STATE // VERIFIED RECORD";
+            position: absolute;
+            top: -10px;
+            left: 20px;
+            background: var(--bg-base);
+            padding: 0 8px;
+            font-size: 0.75rem;
+            color: var(--green);
+            border-left: 2px solid var(--green);
+            border-right: 2px solid var(--green);
+            letter-spacing: 2px;
+        }
+
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 1px dashed rgba(0, 240, 255, 0.2);
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .report-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: #fff;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .report-title span { color: var(--green); text-shadow: 0 0 15px rgba(0, 255, 136, 0.6); }
+
+        .report-id {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+
+        /* Tier Display Badge */
+        .tier-banner {
+            padding: 1.25rem 2rem;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .tier-banner.tier-4 {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid var(--green);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+        }
+
+        .tier-banner.tier-2 {
+            background: rgba(255, 170, 0, 0.1);
+            border: 1px solid var(--amber);
+            box-shadow: 0 0 20px rgba(255, 170, 0, 0.2);
+        }
+
+        .tier-banner.tier-rejected {
+            background: rgba(255, 51, 68, 0.1);
+            border: 1px solid var(--red);
+            box-shadow: 0 0 20px rgba(255, 51, 68, 0.2);
+        }
+
+        .tier-label {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tier-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 900;
+            letter-spacing: 2px;
+            margin-top: 0.2rem;
+        }
+
+        .tier-score {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 900;
+        }
+
+        /* Metrics Data Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: rgba(7, 9, 19, 0.8);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1.2rem;
+            border-radius: 4px;
+        }
+
+        .metric-title {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .metric-val {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--cyan);
+            margin-top: 0.4rem;
+        }
+
+        /* Quick Navigation Action Grid */
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .btn-sector {
+            background: rgba(14, 20, 36, 0.6);
+            border: 1px solid rgba(0, 240, 255, 0.25);
+            padding: 1rem;
+            color: var(--text-main);
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.25s ease;
+        }
+
+        .btn-sector:hover {
+            border-color: var(--cyan);
+            background: rgba(14, 20, 36, 0.95);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+            color: var(--cyan);
+        }
+
+        .btn-retest {
+            background: var(--pink);
+            color: #fff;
+            border: 1px solid var(--pink);
+            padding: 1rem 1.5rem;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-decoration: none;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.25s ease;
+        }
+
+        .btn-retest:hover {
+            background: transparent;
+            color: var(--pink);
+            box-shadow: 0 0 20px rgba(255, 0, 127, 0.7);
+        }
+
+        footer {
+            border-top: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1.2rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            background: rgba(7, 9, 19, 0.95);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <a href="index.html" class="brand">
+            <span class="brand-badge">NKCA</span>
+            <span class="brand-title">NEUROGRID OS</span>
+        </a>
+        <div class="user-panel">
+            <a href="neural-network.html" class="nav-link">Relay Map</a>
+            <span style="font-size: 0.85rem; color: var(--green);">OPERATIVE: <strong id="logged-user" style="color:#fff;">--</strong></span>
+            <button onclick="handleLogout()" class="btn-logout">LOGOUT</button>
+        </div>
+    </header>
+
+    <main>
+        <div class="card">
+            <div class="header-section">
+                <div>
+                    <h1 class="report-title">Clearance <span>Record</span></h1>
+                    <div class="report-id" id="submission-date">RECORD TIMESTAMP: FETCHING...</div>
+                </div>
+                <a href="implant-eligibility.html" class="btn-retest">Submit New Metrics &rarr;</a>
+            </div>
+
+            <!-- Main Status Banner -->
+            <div id="tier-banner" class="tier-banner tier-4">
+                <div>
+                    <div class="tier-label">CURRENT EVALUATION TIER</div>
+                    <div class="tier-value" id="implant-tier">CALCULATING...</div>
+                </div>
+                <div style="text-align: right;">
+                    <div class="tier-label">SCORE</div>
+                    <div class="tier-score" id="compatibility-score">--</div>
+                </div>
+            </div>
+
+            <!-- Stored Form Values -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-title">Synapse Speed</div>
+                    <div class="metric-val" id="val-synapse">-- ms</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Rejection Tolerance</div>
+                    <div class="metric-val" id="val-rejection">-- %</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Cortex Bio-Voltage</div>
+                    <div class="metric-val" id="val-voltage">-- V</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Nanite Blood Density</div>
+                    <div class="metric-val" id="val-nanite">-- /&mu;L</div>
+                </div>
+            </div>
+
+            <div style="border-top: 1px dashed rgba(0, 240, 255, 0.15); padding-top: 1.5rem; margin-top: 1rem;">
+                <div class="tier-label" style="margin-bottom: 0.75rem;">INTERLINKED SECTOR MONITORS</div>
+                <div class="actions-grid">
+                    <a href="neural-network.html" class="btn-sector">
+                        <span>Neural Network Hub</span>
+                        <span style="color: var(--cyan);">&rarr;</span>
+                    </a>
+                    <a href="power-grid.html" class="btn-sector">
+                        <span>Reactor Power Grid</span>
+                        <span style="color: var(--amber);">&rarr;</span>
+                    </a>
+                    <a href="defense-firewall.html" class="btn-sector">
+                        <span>ICE Defense Firewall</span>
+                        <span style="color: var(--green);">&rarr;</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        NKCA SECURE RECORD // READ FROM MYSQL RDS CLUSTER // AUDIT LOG PRESERVED
+    </footer>
+
+    <script>
+        async function fetchClearanceStatus() {
+            try {
+                // Verify user session
+                const userRes = await fetch('/api/user');
+                const userData = await userRes.json();
+                if (!userRes.ok || userData.status !== 'success') {
+                    window.location.href = 'signin.html';
+                    return;
+                }
+                document.getElementById('logged-user').innerText = userData.username;
+
+                // Fetch latest status
+                const res = await fetch('/api/eligibility/status');
+                const result = await res.json();
+
+                if (res.ok && result.status === 'success' && result.data) {
+                    const row = result.data;
+
+                    document.getElementById('submission-date').innerText = `RECORD TIMESTAMP: ${row.submitted_at || 'CONFIRMED'}`;
+                    document.getElementById('implant-tier').innerText = row.implant_tier;
+                    document.getElementById('compatibility-score').innerText = `${row.compatibility_score}/100`;
+                    document.getElementById('val-synapse').innerText = `${row.synapse_speed_ms} ms`;
+                    document.getElementById('val-rejection').innerText = `${row.rejection_tolerance_pct} %`;
+                    document.getElementById('val-voltage').innerText = `${row.cortex_voltage} V`;
+                    document.getElementById('val-nanite').innerText = `${row.nanite_count} /µL`;
+
+                    const banner = document.getElementById('tier-banner');
+                    if (row.implant_tier.includes('CLASS-4')) {
+                        banner.className = 'tier-banner tier-4';
+                    } else if (row.implant_tier.includes('CLASS-2')) {
+                        banner.className = 'tier-banner tier-2';
+                    } else {
+                        banner.className = 'tier-banner tier-rejected';
+                    }
+                } else {
+                    document.getElementById('implant-tier').innerText = 'NO RECORD FOUND';
+                    document.getElementById('submission-date').innerText = 'COMPLETE ASSESSMENT FORM FIRST';
+                }
+            } catch (err) {
+                document.getElementById('implant-tier').innerText = 'DATA READ ERROR';
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+            } finally {
+                window.location.href = 'signin.html';
+            }
+        }
+
+        fetchClearanceStatus();
+    </script>
+</body>
+</html>
