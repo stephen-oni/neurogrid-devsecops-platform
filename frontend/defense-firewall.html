@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroGrid OS // ICE Defense Firewall</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #070913;
+            --bg-card: rgba(14, 20, 36, 0.85);
+            --cyan: #00f0ff;
+            --pink: #ff007f;
+            --purple: #8a2be2;
+            --green: #00ff88;
+            --amber: #ffaa00;
+            --red: #ff3344;
+            --text-main: #d0f7ff;
+            --text-dim: #5c7f99;
+            --border-glow: rgba(0, 240, 255, 0.35);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 80% 20%, rgba(255, 51, 68, 0.12), transparent 45%),
+                radial-gradient(circle at 20% 80%, rgba(0, 240, 255, 0.08), transparent 40%),
+                linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.85));
+        }
+
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 999;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border-glow);
+            background: rgba(7, 9, 19, 0.85);
+            backdrop-filter: blur(12px);
+            padding: 1rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+        }
+
+        .brand-badge {
+            background: var(--pink);
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 0.8rem;
+            padding: 0.25rem 0.6rem;
+            letter-spacing: 2px;
+        }
+
+        .brand-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #fff;
+            text-shadow: 0 0 12px var(--cyan);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .nav-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            color: var(--red);
+            text-shadow: 0 0 8px var(--red);
+        }
+
+        .btn-cyan {
+            background: transparent;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.2), inset 0 0 10px rgba(0, 240, 255, 0.1);
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            font-weight: 700;
+            padding: 0.55rem 1.2rem;
+            border-radius: 4px;
+            text-decoration: none;
+            transition: all 0.25s ease;
+        }
+
+        .btn-cyan:hover {
+            background: var(--cyan);
+            color: var(--bg-base);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.6);
+        }
+
+        main {
+            flex: 1;
+            max-width: 1300px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 2.5rem 1.5rem;
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 2rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 6px;
+            padding: 1.5rem;
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.08);
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px dashed rgba(0, 240, 255, 0.2);
+            padding-bottom: 0.8rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .card-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            color: #fff;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .card-title span { color: var(--red); }
+
+        /* Security HUD Gauges */
+        .threat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .threat-box {
+            background: rgba(7, 9, 19, 0.8);
+            border: 1px solid rgba(255, 51, 68, 0.25);
+            padding: 1.25rem;
+            border-radius: 4px;
+        }
+
+        .threat-label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .threat-val {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: var(--red);
+            margin: 0.3rem 0;
+            text-shadow: 0 0 10px rgba(255, 51, 68, 0.5);
+        }
+
+        /* Live Terminal Log Stream */
+        .terminal-log-box {
+            background: rgba(4, 6, 12, 0.95);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            border-radius: 4px;
+            padding: 1rem;
+            height: 220px;
+            overflow-y: hidden;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column-reverse;
+        }
+
+        .log-entry {
+            margin-bottom: 0.25rem;
+        }
+
+        .log-cyan { color: var(--cyan); }
+        .log-green { color: var(--green); }
+        .log-red { color: var(--red); }
+        .log-amber { color: var(--amber); }
+
+        /* Active Security Protocols */
+        .protocol-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+        }
+
+        .protocol-item {
+            background: rgba(7, 9, 19, 0.75);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1rem;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .protocol-name {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.85rem;
+            color: #fff;
+        }
+
+        .protocol-status {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.2rem 0.5rem;
+            border-radius: 2px;
+        }
+
+        .status-active { background: rgba(0, 255, 136, 0.15); color: var(--green); border: 1px solid var(--green); }
+        .status-armed { background: rgba(255, 51, 68, 0.15); color: var(--red); border: 1px solid var(--red); }
+
+        /* Cross Link Modules */
+        .cross-links {
+            grid-column: span 2;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .sector-card {
+            background: rgba(14, 20, 36, 0.4);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1.25rem;
+            border-radius: 4px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.25s ease;
+        }
+
+        .sector-card:hover {
+            border-color: var(--cyan);
+            background: rgba(14, 20, 36, 0.8);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .sector-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.95rem;
+            color: #fff;
+            margin-bottom: 0.4rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        footer {
+            border-top: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1.2rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            background: rgba(7, 9, 19, 0.95);
+        }
+
+        @media (max-width: 900px) {
+            main { grid-template-columns: 1fr; }
+            .cross-links { grid-column: span 1; }
+            .threat-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <a href="index.html" class="brand">
+            <span class="brand-badge">NKCA</span>
+            <span class="brand-title">NEUROGRID OS</span>
+        </a>
+        <nav class="nav-links">
+            <a href="index.html" class="nav-link">Main Terminal</a>
+            <a href="neural-network.html" class="nav-link">Neural Relay</a>
+            <a href="power-grid.html" class="nav-link">Power Grid</a>
+            <a href="defense-firewall.html" class="nav-link active">ICE Firewall</a>
+            <a href="implant-eligibility.html" class="btn-cyan">Implant Screener</a>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Defense Perimeter Status -->
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">ICE <span>Intrusion Countermeasures</span></div>
+                <div style="font-size: 0.8rem; color: var(--green);">● LEVEL 3 ICE: ENGAGED</div>
+            </div>
+
+            <div class="threat-grid">
+                <div class="threat-box">
+                    <div class="threat-label">Blocked Infiltration Attempts</div>
+                    <div class="threat-val" id="threat-counter">1,842</div>
+                    <div style="font-size: 0.75rem; color: var(--text-dim);">LAST 24 HOURS // AUTO-NULLIFIED</div>
+                </div>
+
+                <div class="threat-box" style="border-color: rgba(0, 255, 136, 0.25);">
+                    <div class="threat-label">Barrier Integrity</div>
+                    <div class="threat-val" style="color: var(--green);" id="barrier-val">99.98%</div>
+                    <div style="font-size: 0.75rem; color: var(--text-dim);">QUANTUM ENCRYPTED MESH</div>
+                </div>
+            </div>
+
+            <!-- Terminal Stream -->
+            <div class="terminal-log-box" id="logStream">
+                <div class="log-entry log-green">[00:00:01] &gt; ICE DEFENSE RUNTIME NORMAL // ALL RELAYS VALIDATED</div>
+                <div class="log-entry log-cyan">[00:00:05] &gt; RDS PERSISTENT STATE SYNC CONFIRMED</div>
+                <div class="log-entry log-amber">[00:00:12] &gt; UNREGISTERED SIGNATURE PROBE NULLIFIED AT NODE 0x4A</div>
+            </div>
+        </section>
+
+        <!-- Threat Protocols -->
+        <aside class="card">
+            <div class="card-header">
+                <div class="card-title">Active <span>Security Directives</span></div>
+            </div>
+
+            <ul class="protocol-list">
+                <li class="protocol-item">
+                    <div>
+                        <div class="protocol-name">1-ACCOUNT-PER-IP FILTER</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim);">Enforced via Backend Gateway</div>
+                    </div>
+                    <span class="protocol-status status-active">ACTIVE</span>
+                </li>
+
+                <li class="protocol-item">
+                    <div>
+                        <div class="protocol-name">3-STRIKE BRUTE FORCE LOCKOUT</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim);">Auto-Lock on DB Credential Failure</div>
+                    </div>
+                    <span class="protocol-status status-armed">ARMED</span>
+                </li>
+
+                <li class="protocol-item">
+                    <div>
+                        <div class="protocol-name">NEURAL REJECTION SHIELD</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim);">Blocks Uncertified Sub-Dermal Sync</div>
+                    </div>
+                    <span class="protocol-status status-active">ACTIVE</span>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- Cross Sector Links -->
+        <section class="cross-links">
+            <a href="neural-network.html" class="sector-card">
+                <div class="sector-title">
+                    <span>Neural Network Relay</span>
+                    <span style="color: var(--cyan);">&rarr;</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Inspect the mesh node topology guarded by ICE barriers.</div>
+            </a>
+
+            <a href="power-grid.html" class="sector-card">
+                <div class="sector-title">
+                    <span>Power Grid Substation</span>
+                    <span style="color: var(--amber);">&rarr;</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Monitor power allocations sustaining defensive shielding.</div>
+            </a>
+
+            <a href="implant-eligibility.html" class="sector-card">
+                <div class="sector-title">
+                    <span>Implant Assessment</span>
+                    <span style="color: var(--pink);">&rarr;</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Submit biometric telemetry for Class-4 authorization.</div>
+            </a>
+        </section>
+    </main>
+
+    <footer>
+        ICE DEFENSE COMMAND // PERIMETER ANOMALY SURVEILLANCE // NKCA CYBERNETICS SECURITY
+    </footer>
+
+    <script>
+        let counter = 1842;
+        const logBox = document.getElementById('logStream');
+        const probeNodes = ['0x8A', '0x1F', '0x99', '0x2C', '0x7E'];
+
+        setInterval(() => {
+            counter += Math.floor(Math.random() * 3);
+            document.getElementById('threat-counter').innerText = counter.toLocaleString();
+
+            const node = probeNodes[Math.floor(Math.random() * probeNodes.length)];
+            const time = new Date().toTimeString().split(' ')[0];
+            
+            const log = document.createElement('div');
+            log.className = 'log-entry log-red';
+            log.innerText = `[${time}] > INTRUSION DETECTED & DEFLECTED // ICE PURGE AT NODE ${node}`;
+            
+            logBox.prepend(log);
+
+            if (logBox.children.length > 8) {
+                logBox.removeChild(logBox.lastChild);
+            }
+        }, 3500);
+    </script>
+</body>
+</html>

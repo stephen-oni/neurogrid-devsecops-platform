@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroGrid OS // Directive Terms & Liability</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #070913;
+            --bg-card: rgba(14, 20, 36, 0.8);
+            --cyan: #00f0ff;
+            --pink: #ff007f;
+            --purple: #8a2be2;
+            --green: #00ff88;
+            --amber: #ffaa00;
+            --red: #ff3344;
+            --text-main: #d0f7ff;
+            --text-dim: #5c7f99;
+            --border-glow: rgba(0, 240, 255, 0.35);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 20% 20%, rgba(255, 170, 0, 0.12), transparent 45%),
+                radial-gradient(circle at 80% 80%, rgba(255, 0, 127, 0.1), transparent 45%),
+                linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.85));
+        }
+
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 999;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border-glow);
+            background: rgba(7, 9, 19, 0.85);
+            backdrop-filter: blur(12px);
+            padding: 1rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+        }
+
+        .brand-badge {
+            background: var(--pink);
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 0.8rem;
+            padding: 0.25rem 0.6rem;
+            letter-spacing: 2px;
+            box-shadow: 0 0 10px rgba(255, 0, 127, 0.5);
+        }
+
+        .brand-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #fff;
+            text-shadow: 0 0 12px var(--cyan);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .nav-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            color: var(--cyan);
+            text-shadow: 0 0 8px var(--cyan);
+        }
+
+        .btn-cyan {
+            background: transparent;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.2), inset 0 0 10px rgba(0, 240, 255, 0.1);
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            font-weight: 700;
+            padding: 0.55rem 1.2rem;
+            border-radius: 4px;
+            text-decoration: none;
+            transition: all 0.25s ease;
+        }
+
+        .btn-cyan:hover {
+            background: var(--cyan);
+            color: var(--bg-base);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.6);
+        }
+
+        main {
+            flex: 1;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 3rem 2rem;
+        }
+
+        .page-header {
+            margin-bottom: 2.5rem;
+        }
+
+        .page-tag {
+            color: var(--amber);
+            font-size: 0.85rem;
+            letter-spacing: 2px;
+            margin-bottom: 0.5rem;
+        }
+
+        .page-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 900;
+            letter-spacing: 2px;
+            color: #fff;
+            text-transform: uppercase;
+        }
+
+        .page-title span {
+            color: var(--amber);
+            text-shadow: 0 0 15px rgba(255, 170, 0, 0.6);
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 6px;
+            padding: 2rem;
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.08);
+            margin-bottom: 2rem;
+        }
+
+        .directive-item {
+            margin-bottom: 1.75rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px dashed rgba(0, 240, 255, 0.15);
+        }
+
+        .directive-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .directive-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.1rem;
+            color: var(--text-main);
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .directive-num {
+            background: rgba(0, 240, 255, 0.1);
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            font-size: 0.75rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 2px;
+        }
+
+        .directive-text {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+
+        .warning-box {
+            background: rgba(255, 51, 68, 0.08);
+            border: 1px solid var(--red);
+            padding: 1.25rem;
+            border-radius: 4px;
+            margin-top: 1.5rem;
+        }
+
+        .warning-title {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--red);
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+            margin-bottom: 0.4rem;
+        }
+
+        .warning-text {
+            color: #ff99aa;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .action-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        footer {
+            border-top: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1.2rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            background: rgba(7, 9, 19, 0.95);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header>
+        <a href="index.html" class="brand">
+            <span class="brand-badge">NKCA</span>
+            <span class="brand-title">NEUROGRID OS</span>
+        </a>
+        <nav class="nav-links">
+            <a href="index.html" class="nav-link">Main Terminal</a>
+            <a href="about.html" class="nav-link">Authority Protocol</a>
+            <a href="terms.html" class="nav-link active">Directive Terms</a>
+            <a href="home.html" class="btn-cyan">Operative Hub</a>
+        </nav>
+    </header>
+
+    <main>
+        <div class="page-header">
+            <div class="page-tag">[ LEGAL & SYNCHRONIZATION DIRECTIVES // MANDATE 88 ]</div>
+            <h1 class="page-title">Directive <span>Terms</span></h1>
+        </div>
+
+        <section class="card">
+            <!-- Directive 1 -->
+            <div class="directive-item">
+                <div class="directive-title">
+                    <span class="directive-num">DIR-01</span>
+                    <span>Biometric Data Ingestion & State Retention</span>
+                </div>
+                <p class="directive-text">
+                    By submitting evaluation parameters via the compatibility screener, you grant the Authority authorization to write neural synapse response metrics, bio-voltage telemetry, and IP network origin data into the central Amazon RDS persistent layer.
+                </p>
+            </div>
+
+            <!-- Directive 2 -->
+            <div class="directive-item">
+                <div class="directive-title">
+                    <span class="directive-num">DIR-02</span>
+                    <span>Zero-Tolerance ICE Tampering & Lockout Protocol</span>
+                </div>
+                <p class="directive-text">
+                    Automated brute-force countermeasure triggers are enforced at the API gateway layer. Three consecutive authentication failures will initiate an irrevocable account lockout in the state database, requiring administrator override.
+                </p>
+            </div>
+
+            <!-- Directive 3 -->
+            <div class="directive-item">
+                <div class="directive-title">
+                    <span class="directive-num">DIR-03</span>
+                    <span>Neural Feedback Liability Waiver</span>
+                </div>
+                <p class="directive-text">
+                    Operatives cleared for Class-4 or Class-2 cyberware assume all risks associated with sub-dermal voltage fluctuations, latency spikes across public relays, and temporary consciousness desynchronization during mesh updates.
+                </p>
+            </div>
+
+            <!-- Red Warning Box -->
+            <div class="warning-box">
+                <div class="warning-title">CRITICAL SAFETY DIRECTIVE</div>
+                <p class="warning-text">
+                    Attempting to interface hardware implants without a verified <strong>TIER_1_ORBITAL_CLEARED</strong> or <strong>CLASS-4</strong> cryptographic token in your RDS profile violates metropolitan law and results in immediate signal disconnection.
+                </p>
+            </div>
+        </section>
+
+        <div class="action-row">
+            <a href="index.html" class="nav-link">&larr; Return to Central Terminal</a>
+            <a href="signup.html" class="btn-cyan">Accept Directives &amp; Register &rarr;</a>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        NEO-STENIOX CYBERNETICS AUTHORITY // MANDATE ENFORCEMENT ENGINE // REVERSE PROXIED VIA NGINX
+    </footer>
+
+</body>
+</html>

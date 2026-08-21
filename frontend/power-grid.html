@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroGrid OS // Reactor Power Grid</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #070913;
+            --bg-card: rgba(14, 20, 36, 0.85);
+            --cyan: #00f0ff;
+            --pink: #ff007f;
+            --purple: #8a2be2;
+            --green: #00ff88;
+            --amber: #ffaa00;
+            --red: #ff3344;
+            --text-main: #d0f7ff;
+            --text-dim: #5c7f99;
+            --border-glow: rgba(0, 240, 255, 0.35);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 80% 20%, rgba(255, 170, 0, 0.12), transparent 45%),
+                radial-gradient(circle at 20% 80%, rgba(0, 240, 255, 0.08), transparent 40%),
+                linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.85));
+        }
+
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 999;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border-glow);
+            background: rgba(7, 9, 19, 0.85);
+            backdrop-filter: blur(12px);
+            padding: 1rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+        }
+
+        .brand-badge {
+            background: var(--pink);
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 0.8rem;
+            padding: 0.25rem 0.6rem;
+            letter-spacing: 2px;
+        }
+
+        .brand-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #fff;
+            text-shadow: 0 0 12px var(--cyan);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .nav-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            color: var(--amber);
+            text-shadow: 0 0 8px var(--amber);
+        }
+
+        .btn-cyan {
+            background: transparent;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.2), inset 0 0 10px rgba(0, 240, 255, 0.1);
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            font-weight: 700;
+            padding: 0.55rem 1.2rem;
+            border-radius: 4px;
+            text-decoration: none;
+            transition: all 0.25s ease;
+        }
+
+        .btn-cyan:hover {
+            background: var(--cyan);
+            color: var(--bg-base);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.6);
+        }
+
+        main {
+            flex: 1;
+            max-width: 1300px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 2.5rem 1.5rem;
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 2rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 6px;
+            padding: 1.5rem;
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.08);
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px dashed rgba(0, 240, 255, 0.2);
+            padding-bottom: 0.8rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .card-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            color: #fff;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .card-title span { color: var(--amber); }
+
+        /* Reactor Core HUD */
+        .reactor-gauges {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .gauge-box {
+            background: rgba(7, 9, 19, 0.8);
+            border: 1px solid rgba(255, 170, 0, 0.25);
+            padding: 1.25rem;
+            border-radius: 4px;
+        }
+
+        .gauge-label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .gauge-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 900;
+            color: var(--amber);
+            margin: 0.3rem 0;
+            text-shadow: 0 0 10px rgba(255, 170, 0, 0.4);
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.4rem;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--amber), var(--pink));
+            box-shadow: 0 0 8px var(--amber);
+            transition: width 0.4s ease;
+        }
+
+        /* Sector Allocations */
+        .sector-alloc-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+        }
+
+        .sector-alloc-item {
+            background: rgba(7, 9, 19, 0.75);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1rem;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .alloc-name {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.85rem;
+            color: #fff;
+        }
+
+        .alloc-power {
+            color: var(--cyan);
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        /* Sector Links Section */
+        .cross-links {
+            grid-column: span 2;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .sector-card {
+            background: rgba(14, 20, 36, 0.4);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1.25rem;
+            border-radius: 4px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.25s ease;
+        }
+
+        .sector-card:hover {
+            border-color: var(--cyan);
+            background: rgba(14, 20, 36, 0.8);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .sector-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.95rem;
+            color: #fff;
+            margin-bottom: 0.4rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        footer {
+            border-top: 1px solid rgba(0, 240, 255, 0.15);
+            padding: 1.2rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            background: rgba(7, 9, 19, 0.95);
+        }
+
+        @media (max-width: 900px) {
+            main { grid-template-columns: 1fr; }
+            .cross-links { grid-column: span 1; }
+            .reactor-gauges { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <a href="index.html" class="brand">
+            <span class="brand-badge">NKCA</span>
+            <span class="brand-title">NEUROGRID OS</span>
+        </a>
+        <nav class="nav-links">
+            <a href="index.html" class="nav-link">Main Terminal</a>
+            <a href="neural-network.html" class="nav-link">Neural Relay</a>
+            <a href="power-grid.html" class="nav-link active">Power Grid</a>
+            <a href="defense-firewall.html" class="nav-link">ICE Firewall</a>
+            <a href="implant-eligibility.html" class="btn-cyan">Implant Screener</a>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Reactor Array HUD -->
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">Bio-Plasma <span>Reactor Substation</span></div>
+                <div style="font-size: 0.8rem; color: var(--green);">● CORE ONLINE: STABLE</div>
+            </div>
+
+            <div class="reactor-gauges">
+                <div class="gauge-box">
+                    <div class="gauge-label">Substation Voltage Output</div>
+                    <div class="gauge-value" id="grid-voltage">4.28 GV</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="voltage-bar" style="width: 86%;"></div>
+                    </div>
+                </div>
+
+                <div class="gauge-box">
+                    <div class="gauge-label">Plasma Thermal State</div>
+                    <div class="gauge-value" id="grid-temp" style="color: var(--pink);">1,420 °K</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="temp-bar" style="width: 68%; background: linear-gradient(90deg, var(--cyan), var(--pink));"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="background: rgba(7, 9, 19, 0.6); padding: 1rem; border-radius: 4px; border: 1px solid rgba(0, 240, 255, 0.1);">
+                <div style="font-size: 0.8rem; color: var(--cyan); margin-bottom: 0.4rem; letter-spacing: 1px;">DIAGNOSTIC TELEMETRY LOG</div>
+                <p style="font-size: 0.85rem; color: var(--text-dim); line-height: 1.6;">
+                    Primary magnetic confinement coils are operating at nominal impedance. Sub-station bio-voltage feeds directly into the neural routing mesh to sustain Class-4 cybernetic link stability.
+                </p>
+            </div>
+        </section>
+
+        <!-- Sector Power Allocations -->
+        <aside class="card">
+            <div class="card-header">
+                <div class="card-title">Sector <span>Distribution</span></div>
+            </div>
+
+            <ul class="sector-alloc-list">
+                <li class="sector-alloc-item">
+                    <div>
+                        <div class="alloc-name">NEURAL RELAY NODES</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim);">Priority: CRITICAL (ALPHA)</div>
+                    </div>
+                    <div class="alloc-power">1.82 GV</div>
+                </li>
+
+                <li class="sector-alloc-item">
+                    <div>
+                        <div class="alloc-name">ICE FIREWALL MATRICES</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim);">Priority: HIGH (BETA)</div>
+                    </div>
+                    <div class="alloc-power">1.45 GV</div>
+                </li>
+
+                <li class="sector-alloc-item">
+                    <div>
+                        <div class="alloc-name">METROPOLIS PUBLIC MESH</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim);">Priority: STANDARD</div>
+                    </div>
+                    <div class="alloc-power">1.01 GV</div>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- Cross Sector Links -->
+        <section class="cross-links">
+            <a href="neural-network.html" class="sector-card">
+                <div class="sector-title">
+                    <span>Neural Network Relay</span>
+                    <span style="color: var(--cyan);">&rarr;</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Inspect the mesh relays powered by this generator.</div>
+            </a>
+
+            <a href="defense-firewall.html" class="sector-card">
+                <div class="sector-title">
+                    <span>ICE Defense Firewall</span>
+                    <span style="color: var(--green);">&rarr;</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Verify barrier defense integrity against energy fluctuations.</div>
+            </a>
+
+            <a href="implant-eligibility.html" class="sector-card">
+                <div class="sector-title">
+                    <span>Implant Assessment</span>
+                    <span style="color: var(--pink);">&rarr;</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Evaluate biological tolerance and bio-voltage compatibility.</div>
+            </a>
+        </section>
+    </main>
+
+    <footer>
+        REACTOR SUB-STATION 04 // POWER CONTROL &amp; DISTRIBUTION MESH // NKCA SYSTEM MONITOR
+    </footer>
+
+    <script>
+        setInterval(() => {
+            const v = (4.15 + Math.random() * 0.25).toFixed(2);
+            const t = Math.floor(1390 + Math.random() * 60);
+            
+            document.getElementById('grid-voltage').innerText = `${v} GV`;
+            document.getElementById('grid-temp').innerText = `${t} °K`;
+            
+            document.getElementById('voltage-bar').style.width = `${(v / 5.0) * 100}%`;
+            document.getElementById('temp-bar').style.width = `${((t - 1300) / 200) * 100}%`;
+        }, 2500);
+    </script>
+</body>
+</html>
