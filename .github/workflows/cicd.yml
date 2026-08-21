@@ -44,17 +44,29 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
           terraform apply -auto-approve -input=false
-          
-          # Force state refresh to ensure all output mappings are resolved
           terraform refresh
 
-          ASG=$(terraform output -raw autoscaling_group_name)
-          RDS=$(terraform output -raw rds_endpoint)
-          S3=$(terraform output -raw frontend_s3_bucket_name)
-          CF=$(terraform output -raw cloudfront_distribution_id)
+          # Extract raw JSON values using jq to bypass Terraform sensitivity masking
+          ASG=$(terraform output -json | jq -r '.autoscaling_group_name.value // empty')
+          RDS=$(terraform output -json | jq -r '.rds_endpoint.value // empty')
+          S3=$(terraform output -json | jq -r '.frontend_s3_bucket_name.value // empty')
+          CF=$(terraform output -json | jq -r '.cloudfront_distribution_id.value // empty')
+
+          # Fallback: Query AWS RDS directly if Terraform output was suppressed
+          if [ -z "$RDS" ]; then
+            echo "Warning: Terraform output was empty. Querying AWS RDS directly..."
+            RDS=$(aws rds describe-db-instances \
+              --query "DBInstances[?DBInstanceStatus=='available'].Endpoint.Address" \
+              --output text | awk '{print $1}')
+          fi
 
           echo "Extracted RDS Endpoint: $RDS"
           echo "Extracted ASG Name: $ASG"
+
+          if [ -z "$RDS" ]; then
+            echo "CRITICAL ERROR: Failed to resolve RDS Endpoint."
+            exit 1
+          fi
 
           echo "asg_name=$ASG" >> "$GITHUB_OUTPUT"
           echo "rds_endpoint=$RDS" >> "$GITHUB_OUTPUT"
@@ -169,15 +181,7 @@ jobs:
               \"echo '${FILE_B64}' | base64 -d > app-files.tar.gz\",
               \"tar -xzf app-files.tar.gz\",
               \"rm -f app-files.tar.gz\",
-              \"cat << 'EOF' > .env
-          ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-          RDS_ENDPOINT=${RDS_HOST}
-          DB_HOST=${RDS_HOST}
-          DB_USER=${{ secrets.DB_USER }}
-          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          DB_NAME=${{ secrets.DB_NAME }}
-          SECRET_KEY=${{ secrets.SECRET_KEY }}
-          EOF\",
+              \"printf 'ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\nRDS_ENDPOINT=${RDS_HOST}\nDB_HOST=${RDS_HOST}\nDB_USER=${{ secrets.DB_USER }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}\nDB_NAME=${{ secrets.DB_NAME }}\nSECRET_KEY=${{ secrets.SECRET_KEY }}\n' > .env\",
               \"which mysql >/dev/null 2>&1 || (DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-client)\",
               \"mysql -h ${RDS_HOST} -u ${{ secrets.DB_USER }} -p'${{ secrets.DB_PASSWORD }}' ${{ secrets.DB_NAME }} < init.sql || true\",
               \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\",
