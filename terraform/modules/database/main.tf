@@ -1,5 +1,4 @@
-# 1. DB Subnet Group across the 2 Private DB Subnets
-
+# DB Subnet Group across the 2 Private DB Subnets
 resource "aws_db_subnet_group" "rds_subnet_group" {
   name        = "neurogrid-db-subnet-group"
   subnet_ids  = var.private_db_subnet_ids
@@ -10,8 +9,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
   }
 }
 
-# 2. Multi-AZ AWS Managed MySQL RDS Instance
-
+# Multi-AZ AWS Managed MySQL RDS Instance
 resource "aws_db_instance" "mysql" {
   identifier             = "neurogrid-mysql-db"
   allocated_storage      = var.allocated_storage

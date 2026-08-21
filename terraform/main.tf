@@ -54,3 +54,12 @@ module "frontend" {
 
   alb_dns_name = module.network.alb_dns_name
 }
+
+# 6. Monitoring Module (Standalone Dedicated Prometheus & Grafana Host)
+module "monitoring" {
+  source = "./modules/monitoring"
+
+  vpc_id           = module.network.vpc_id
+  public_subnet_id = module.network.public_subnet_ids[0]
+  instance_type    = var.monitoring_instance_type
+}

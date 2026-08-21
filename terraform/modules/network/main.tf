@@ -43,7 +43,7 @@ resource "aws_subnet" "public_2" {
   }
 }
 
-# PRIVATE APP SUBNETS (INSTANCES + NGINX)
+# PRIVATE APP SUBNETS (BACKEND WORKERS)
 resource "aws_subnet" "private_app_1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.private_app_subnet_cidr_1
@@ -62,7 +62,7 @@ resource "aws_subnet" "private_app_2" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name = "neurogrid-privatesubnet-2"
+    Name = "neurogrid-private-subnet-2"
   }
 }
 
@@ -218,7 +218,7 @@ resource "aws_security_group" "alb_sg" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "Allow HTTP from CloudFront"
+    description = "Allow HTTP from CloudFront / Internet"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -226,7 +226,7 @@ resource "aws_security_group" "alb_sg" {
   }
 
   egress {
-    description = "Forward to App EC2 SG"
+    description = "Forward traffic to backend instances"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -240,15 +240,33 @@ resource "aws_security_group" "alb_sg" {
 
 resource "aws_security_group" "app_sg" {
   name        = "neurogrid-app-sg"
-  description = "Ingress strictly from ALB, no direct internet"
+  description = "Ingress strictly from ALB and Monitoring host, no direct internet"
   vpc_id      = aws_vpc.main.id
 
+  # Inbound application traffic from ALB
   ingress {
     description     = "Allow HTTP only from ALB"
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
     security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  # Inbound Prometheus metric scrapes (VPC internal)
+  ingress {
+    description = "Prometheus Flask /metrics scraping"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  ingress {
+    description = "Prometheus Node Exporter scraping"
+    from_port   = 9100
+    to_port     = 9100
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {

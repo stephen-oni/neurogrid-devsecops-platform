@@ -7,10 +7,11 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  # Flask Backend Application
   backend:
     image: ${ECR_REGISTRY}/neurogrid-backend:latest
     container_name: neurogrid_backend
-    restart: always
+    restart: unless-stopped
     logging: *default-logging
     ports:
       - "80:5000"
@@ -20,58 +21,18 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
       - SECRET_KEY=${SECRET_KEY}
-    depends_on:
-      - db
     networks:
       - neurogrid-net
 
-  db:
-    image: mysql:8.0
-    container_name: neurogrid_mysql
-    restart: always
-    logging: *default-logging
-    environment:
-      - MYSQL_DATABASE=${DB_NAME}
-      - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASSWORD}
-      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
-    volumes:
-      - db_data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "3306:3306"
-    networks:
-      - neurogrid-net
-
-  prometheus:
-    image: prom/prometheus:v2.50.0
-    container_name: neurogrid_prometheus
-    restart: always
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=2d'
-      - '--storage.tsdb.retention.size=1GB'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-    ports:
-      - "9090:9090"
-    networks:
-      - neurogrid-net
-
+  # System Metrics Exporter for Prometheus Scraping
   node_exporter:
     image: prom/node-exporter:v1.7.0
     container_name: neurogrid_node_exporter
-    restart: always
+    restart: unless-stopped
     logging: *default-logging
+    # Host networking and PID mode ensure exact hardware and OS level metrics collection
+    pid: host
+    network_mode: host
     deploy:
       resources:
         limits:
@@ -85,37 +46,6 @@ services:
       - '--path.rootfs=/rootfs'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    ports:
-      - "9100:9100"
-    networks:
-      - neurogrid-net
-
-  grafana:
-    image: grafana/grafana:10.3.3
-    container_name: neurogrid_grafana
-    restart: always
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-    ports:
-      - "3000:3000"
-    depends_on:
-      - prometheus
-    networks:
-      - neurogrid-net
-
-volumes:
-  db_data:
-  prometheus_data:
-  grafana_data:
 
 networks:
   neurogrid-net:

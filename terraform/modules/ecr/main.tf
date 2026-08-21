@@ -1,5 +1,4 @@
-# 1. Amazon Elastic Container Registry (ECR) Repository
-
+# Amazon Elastic Container Registry (ECR) Repository
 resource "aws_ecr_repository" "backend" {
   name                 = var.repository_name
   image_tag_mutability = "MUTABLE"
@@ -20,8 +19,7 @@ resource "aws_ecr_repository" "backend" {
   }
 }
 
-#  Lifecycle Policy (Retains latest tagged images and expires untagged builds) for secuirty purpose. 
-
+# Lifecycle Policy (Expires untagged images and retains only the latest 10 tagged releases)
 resource "aws_ecr_lifecycle_policy" "backend_policy" {
   repository = aws_ecr_repository.backend.name
 

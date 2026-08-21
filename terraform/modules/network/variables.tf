@@ -1,4 +1,4 @@
-# The vpc and the zone
+# VPC & Availability Zones
 variable "vpc_cidr" {
   type        = string
   default     = "192.168.0.0/16"
@@ -17,8 +17,7 @@ variable "availability_zone_2" {
   description = "Secondary availability zone"
 }
 
-
-# 2 Public Subnets 
+# 2 Public Subnets (ALB, NAT Gateways & Monitoring Host)
 variable "public_subnet_cidr_1" {
   type        = string
   default     = "192.168.1.0/24"
@@ -31,8 +30,7 @@ variable "public_subnet_cidr_2" {
   description = "CIDR block for public subnet 2"
 }
 
-# 2 Private App Subnets
-
+# 2 Private App Subnets (ASG Compute Tier)
 variable "private_app_subnet_cidr_1" {
   type        = string
   default     = "192.168.10.0/24"
@@ -45,16 +43,15 @@ variable "private_app_subnet_cidr_2" {
   description = "CIDR block for private app subnet 2"
 }
 
-# 2 Private Database Subnets
-
+# 2 Private Database Subnets (RDS Multi-AZ)
 variable "private_db_subnet_cidr_1" {
   type        = string
   default     = "192.168.30.0/24"
-  description = "CIDR block for private DB subnet 1 "
+  description = "CIDR block for private DB subnet 1"
 }
 
 variable "private_db_subnet_cidr_2" {
   type        = string
   default     = "192.168.40.0/24"
-  description = "CIDR block for private DB subnet 2)"
+  description = "CIDR block for private DB subnet 2"
 }

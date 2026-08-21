@@ -65,7 +65,7 @@ variable "private_db_subnet_cidr_2" {
   default     = "192.168.40.0/24"
 }
 
-# 3. Compute (EC2 & Auto Scaling Group)
+# 3. Compute (EC2 Backend Auto Scaling Group)
 
 variable "instance_type" {
   description = "EC2 instance type for backend workloads"
@@ -73,7 +73,15 @@ variable "instance_type" {
   default     = "t3.small"
 }
 
-# 4. Database (RDS Multi-AZ MySQL)
+# 4. Monitoring (Dedicated Prometheus & Grafana Instance)
+
+variable "monitoring_instance_type" {
+  description = "EC2 instance type for the dedicated Prometheus and Grafana host"
+  type        = string
+  default     = "t3.small"
+}
+
+# 5. Database (RDS Multi-AZ MySQL)
 
 variable "db_name" {
   description = "Name of the default MySQL database to create"
@@ -111,7 +119,7 @@ variable "max_allocated_storage" {
   default     = 100
 }
 
-# 5. ECR Module Variables
+# 6. ECR Module Variables
 
 variable "repository_name" {
   description = "Name of the ECR repository"

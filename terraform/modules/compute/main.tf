@@ -1,5 +1,4 @@
 # IAM Role & Instance Profile for Systems Manager (SSM) & ECR Access
-
 resource "aws_iam_role" "ec2_ssm_role" {
   name = "neurogrid-ec2-ssm-role"
 
@@ -33,7 +32,6 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 # Ubuntu 22.04 LTS AMI Data Source
-
 data "aws_ami" "ubuntu" {
   most_recent = true
 
@@ -47,11 +45,10 @@ data "aws_ami" "ubuntu" {
     values = ["hvm"]
   }
 
-  owners = ["099720109477"] # Canonical from the owner
+  owners = ["099720109477"] # Canonical
 }
 
 # Launch Template
-
 resource "aws_launch_template" "backend" {
   name_prefix   = "neurogrid-backend-"
   image_id      = data.aws_ami.ubuntu.id
@@ -63,12 +60,12 @@ resource "aws_launch_template" "backend" {
 
   vpc_security_group_ids = [var.app_security_group_id]
 
-  # EC2 Instance with 2GB Swap space & Docker setup 
+  # EC2 Instance bootstrap: 2GB Swap space, Docker, and SSM agent setup
   user_data = base64encode(<<-EOF
               #!/bin/bash
+              set -e
 
               # Configure 2GB Swap file for stability
-
               fallocate -l 2G /swapfile
               chmod 600 /swapfile
               mkswap /swapfile
@@ -76,7 +73,6 @@ resource "aws_launch_template" "backend" {
               echo '/swapfile none swap sw 0 0' >> /etc/fstab
 
               # Install official Docker, Docker Compose plugin, and AWS CLI
-
               apt-get update -y
               apt-get install -y ca-certificates curl gnupg unzip
               install -m 0755 -d /etc/apt/keyrings
@@ -86,21 +82,22 @@ resource "aws_launch_template" "backend" {
               apt-get update -y
               apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin awscli
 
-              # Enable Docker without sudo
-
+              # Enable Docker service without sudo
               systemctl enable --now docker
               usermod -aG docker ubuntu
 
               # Ensure Amazon SSM Agent is active
-
-              snap start amazon-ssm-agent
+              snap start amazon-ssm-agent || systemctl enable --now amazon-ssm-agent
               EOF
   )
 
+  # Tags used by Prometheus EC2 service discovery on the monitoring host to auto-scrape
   tag_specifications {
     resource_type = "instance"
     tags = {
-      Name = "neurogrid-backend-node"
+      Name       = "neurogrid-backend-node"
+      Monitoring = "enabled"
+      Role       = "backend"
     }
   }
 
@@ -109,8 +106,7 @@ resource "aws_launch_template" "backend" {
   }
 }
 
-# Auto Scaling Group (Scalable 1 to 3, Default 2 across Private Subnets)
-
+# Auto Scaling Group (Scalable 1 to 3, Default 1 across Private Subnets)
 resource "aws_autoscaling_group" "backend_asg" {
   name_prefix         = "neurogrid-asg-"
   vpc_zone_identifier = var.private_app_subnet_ids
@@ -141,7 +137,6 @@ resource "aws_autoscaling_group" "backend_asg" {
 }
 
 # Target Tracking Scaling Policy to monitor 70% Average CPU Utilization
-
 resource "aws_autoscaling_policy" "cpu_scaling_policy" {
   name                   = "neurogrid-cpu-target-tracking"
   autoscaling_group_name = aws_autoscaling_group.backend_asg.name

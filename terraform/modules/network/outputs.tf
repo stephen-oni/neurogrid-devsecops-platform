@@ -12,7 +12,7 @@ output "vpc_cidr_block" {
 # Subnet Outputs 
 output "public_subnet_ids" {
   value       = [aws_subnet.public_1.id, aws_subnet.public_2.id]
-  description = "List of public subnet IDs (ALB & NAT Gateways)"
+  description = "List of public subnet IDs (ALB, NAT Gateways & Monitoring Host)"
 }
 
 output "private_app_subnet_ids" {
@@ -33,12 +33,12 @@ output "alb_security_group_id" {
 
 output "app_security_group_id" {
   value       = aws_security_group.app_sg.id
-  description = "Security Group ID to attach to backend EC2 instances"
+  description = "Security Group ID attached to backend EC2 instances"
 }
 
 output "db_security_group_id" {
   value       = aws_security_group.db_sg.id
-  description = "Security Group ID to attach to the RDS instance"
+  description = "Security Group ID attached to the RDS instance"
 }
 
 # Load Balancer Outputs

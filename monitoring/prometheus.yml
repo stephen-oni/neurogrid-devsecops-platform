@@ -3,14 +3,46 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # Prometheus Self-Monitoring
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'node_exporter'
-    static_configs:
-      - targets: ['node_exporter:9100']
+  # Auto-discover Flask Application Metrics from ASG
+  - job_name: 'neurogrid-backend-flask'
+    metrics_path: /metrics
+    ec2_sd_configs:
+      - region: us-east-1
+        port: 80
+        filters:
+          - name: tag:Monitoring
+            values: ["enabled"]
+          - name: tag:Role
+            values: ["backend"]
+          - name: instance-state-name
+            values: ["running"]
+    relabel_configs:
+      # Map private IP as the instance label
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: instance
+      # Map EC2 Name tag to a readable label in Grafana
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: node
 
-  - job_name: 'flask_backend'
-    static_configs:
-      - targets: ['backend:5000']
+  # Auto-discover Node Exporter System Metrics from ASG
+  - job_name: 'neurogrid-backend-node-exporter'
+    ec2_sd_configs:
+      - region: us-east-1
+        port: 9100
+        filters:
+          - name: tag:Monitoring
+            values: ["enabled"]
+          - name: tag:Role
+            values: ["backend"]
+          - name: instance-state-name
+            values: ["running"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: instance
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: node

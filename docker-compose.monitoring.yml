@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    container_name: neurogrid_prometheus
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    ports:
+      # Bound to localhost since access is handled via SSM port forwarding
+      - "127.0.0.1:9090:9090"
+    networks:
+      - monitoring_net
+
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: neurogrid_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      # Bound to localhost for secure SSM tunnel streaming
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring_net
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  monitoring_net:
+    driver: bridge

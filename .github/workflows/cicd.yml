@@ -20,6 +20,7 @@ jobs:
       rds_endpoint: ${{ steps.apply.outputs.rds_endpoint }}
       s3_bucket: ${{ steps.apply.outputs.s3_bucket }}
       cloudfront_id: ${{ steps.apply.outputs.cloudfront_id }}
+      monitoring_instance_id: ${{ steps.apply.outputs.monitoring_instance_id }}
 
     steps:
       - name: Checkout Code
@@ -51,14 +52,13 @@ jobs:
           RDS=$(terraform output -raw rds_endpoint 2>/dev/null || true)
           S3=$(terraform output -raw frontend_s3_bucket_name 2>/dev/null || true)
           CF=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || true)
-
-          echo "Captured ASG: $ASG"
-          echo "Captured RDS: $RDS"
+          MON_ID=$(terraform output -raw monitoring_instance_id 2>/dev/null || true)
 
           echo "asg_name=$ASG" >> "$GITHUB_OUTPUT"
           echo "rds_endpoint=$RDS" >> "$GITHUB_OUTPUT"
           echo "s3_bucket=$S3" >> "$GITHUB_OUTPUT"
           echo "cloudfront_id=$CF" >> "$GITHUB_OUTPUT"
+          echo "monitoring_instance_id=$MON_ID" >> "$GITHUB_OUTPUT"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -134,7 +134,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
+  deploy-backend:
     name: "Deploy App to ASG via AWS SSM"
     needs: [terraform, build-and-push, deploy-frontend]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -155,39 +155,32 @@ jobs:
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           
-          # 1. Resolve RDS Endpoint (Pipeline Output -> Direct AWS Query Fallback)
+          # 1. Resolve RDS Endpoint
           RDS_HOST="${{ needs.terraform.outputs.rds_endpoint }}"
           if [ -z "$RDS_HOST" ]; then
-            echo "Pipeline rds_endpoint was empty. Querying AWS directly..."
-            RDS_HOST=$(aws rds describe-db-instances \
-              --query "DBInstances[0].Endpoint.Address" \
-              --output text)
+            RDS_HOST=$(aws rds describe-db-instances --query "DBInstances[0].Endpoint.Address" --output text)
           fi
 
-          # 2. Resolve ASG Name (Pipeline Output -> Direct AWS Query Fallback)
+          # 2. Resolve ASG Name
           ASG_TARGET="${{ needs.terraform.outputs.asg_name }}"
           if [ -z "$ASG_TARGET" ]; then
-            echo "Pipeline asg_name was empty. Querying AWS directly..."
             ASG_TARGET=$(aws autoscaling describe-auto-scaling-groups \
               --query "AutoScalingGroups[?contains(AutoScalingGroupName, 'neurogrid')].AutoScalingGroupName" \
               --output text | awk '{print $1}')
           fi
-
-          echo "Target ASG: $ASG_TARGET"
-          echo "Target RDS Endpoint: $RDS_HOST"
 
           if [ -z "$RDS_HOST" ] || [ "$RDS_HOST" = "None" ]; then
             echo "CRITICAL: Could not determine RDS Endpoint."
             exit 1
           fi
 
-          tar -czf app-files.tar.gz docker-compose.yml init.sql monitoring/
+          tar -czf app-files.tar.gz docker-compose.yml init.sql
           FILE_B64=$(base64 -w 0 app-files.tar.gz)
 
           COMMAND_ID=$(aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=${ASG_TARGET}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Zero-Touch Continuous Deployment & DB Auto-Migration" \
+            --comment "Deploy Application and Node Exporter to ASG" \
             --parameters commands="[
               \"export PATH=\$PATH:/usr/local/bin:/snap/bin\",
               \"cloud-init status --wait\",
@@ -206,16 +199,80 @@ jobs:
             --query "Command.CommandId" \
             --output text)
 
-          echo "Dispatched SSM Command ID: $COMMAND_ID"
+          echo "Dispatched Backend ASG Command ID: $COMMAND_ID"
 
           while true; do
             STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
             echo "Current Command Status: $STATUS"
             if [ "$STATUS" = "Success" ]; then
-              echo "Deployment & Schema Migration successful across all ASG instances!"
+              echo "Backend deployment successful across all ASG instances!"
               break
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
-              echo "Deployment failed with status: $STATUS"
+              echo "Backend deployment failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 10
+          done
+
+  deploy-monitoring:
+    name: "Deploy Monitoring Stack to Dedicated Host"
+    needs: [terraform, deploy-backend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Execute Monitoring Deployment via SSM
+        run: |
+          MON_INSTANCE_ID="${{ needs.terraform.outputs.monitoring_instance_id }}"
+          if [ -z "$MON_INSTANCE_ID" ]; then
+            MON_INSTANCE_ID=$(aws ec2 describe-instances \
+              --filters "Name=tag:Role,Values=monitoring" "Name=instance-state-name,Values=running" \
+              --query "Reservations[0].Instances[0].InstanceId" \
+              --output text)
+          fi
+
+          echo "Target Monitoring Instance ID: $MON_INSTANCE_ID"
+
+          tar -czf monitoring-files.tar.gz -C monitoring docker-compose.yml prometheus.yml
+          MON_FILE_B64=$(base64 -w 0 monitoring-files.tar.gz)
+
+          MON_CMD_ID=$(aws ssm send-command \
+            --instance-ids "$MON_INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Prometheus & Grafana to Monitoring Host" \
+            --parameters commands="[
+              \"export PATH=\$PATH:/usr/local/bin:/snap/bin\",
+              \"cloud-init status --wait\",
+              \"mkdir -p /home/ubuntu/monitoring\",
+              \"cd /home/ubuntu/monitoring\",
+              \"echo '${MON_FILE_B64}' | base64 -d > monitoring-files.tar.gz\",
+              \"tar -xzf monitoring-files.tar.gz\",
+              \"rm -f monitoring-files.tar.gz\",
+              \"docker compose up -d --remove-orphans\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Dispatched Monitoring Host Command ID: $MON_CMD_ID"
+
+          while true; do
+            STATUS=$(aws ssm list-commands --command-id "$MON_CMD_ID" --query "Commands[0].Status" --output text)
+            echo "Current Command Status: $STATUS"
+            if [ "$STATUS" = "Success" ]; then
+              echo "Monitoring stack running cleanly on dedicated host!"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "Monitoring stack deployment failed with status: $STATUS"
               exit 1
             fi
             sleep 10

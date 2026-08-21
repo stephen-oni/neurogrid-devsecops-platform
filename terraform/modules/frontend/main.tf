@@ -1,9 +1,9 @@
-#  Generate random string for unique S3 bucket naming
+# Generate random string for unique S3 bucket naming
 resource "random_id" "bucket_suffix" {
   byte_length = 4
 }
 
-#  S3 Bucket for Static Frontend Assets
+# S3 Bucket for Static Frontend Assets
 resource "aws_s3_bucket" "frontend" {
   bucket        = "neurogrid-frontend-${random_id.bucket_suffix.hex}"
   force_destroy = true
@@ -32,7 +32,7 @@ resource "aws_cloudfront_origin_access_control" "oac" {
   signing_protocol                  = "sigv4"
 }
 
-#  Managed CloudFront Policies for API and Static Content
+# Managed CloudFront Policies for API and Static Content
 data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
 }
