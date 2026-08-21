@@ -1,0 +1,37 @@
+# Local staging & scratch directories
+DO-NOT-PUSH/
+PIC_FOR POSTING/
+monitoring/grafana_data/
+monitoring/prometheus_data/
+
+# Environment files and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Terraform local caches & state (recursive across all folders)
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# OS & Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
