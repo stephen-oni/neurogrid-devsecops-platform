@@ -1,0 +1,180 @@
+name: "CI/CD Pipeline"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: "Terraform Provisioning"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    outputs:
+      asg_name: ${{ steps.apply.outputs.asg_name }}
+      rds_endpoint: ${{ steps.apply.outputs.rds_endpoint }}
+      s3_bucket: ${{ steps.apply.outputs.s3_bucket }}
+      cloudfront_id: ${{ steps.apply.outputs.cloudfront_id }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Initialize Terraform Working Directory
+        run: terraform init
+
+      - name: Check Terraform Code Formatting
+        run: terraform fmt -check
+
+      - name: Validate Terraform Syntax & Configuration
+        run: terraform validate
+
+      - name: Generate Speculative Execution Plan
+        run: terraform plan -input=false
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Apply Infrastructure Changes & Capture Outputs
+        id: apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          terraform apply -auto-approve -input=false
+          echo "asg_name=$(terraform output -raw autoscaling_group_name)" >> "$GITHUB_OUTPUT"
+          echo "rds_endpoint=$(terraform output -raw rds_endpoint)" >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=$(terraform output -raw frontend_s3_bucket_name)" >> "$GITHUB_OUTPUT"
+          echo "cloudfront_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+  deploy-frontend:
+    name: "Deploy Frontend to S3 & Invalidate CloudFront"
+    needs: terraform
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Sync Static Web Assets to S3
+        run: |
+          aws s3 sync ./frontend s3://${{ needs.terraform.outputs.s3_bucket }} --delete
+
+      - name: Purge CloudFront Edge Cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ needs.terraform.outputs.cloudfront_id }} --paths "/*"
+
+  build-and-push:
+    name: "Build & Push to ECR"
+    needs: terraform
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Authenticate Docker to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Backend Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: neurogrid-backend
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  deploy:
+    name: "Deploy App to ASG via AWS SSM"
+    needs: [terraform, build-and-push, deploy-frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Execute Deployment across ASG Nodes via SSM
+        run: |
+          tar -czf app-files.tar.gz docker-compose.yml init.sql monitoring/
+          FILE_B64=$(base64 -w 0 app-files.tar.gz)
+
+          COMMAND_ID=$(aws ssm send-command \
+            --targets "Key=tag:aws:autoscaling:groupName,Values=${{ needs.terraform.outputs.asg_name }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy NeuroGrid Services via Docker Compose" \
+            --parameters commands="[
+              \"export PATH=\$PATH:/usr/local/bin:/snap/bin\",
+              \"cloud-init status --wait\",
+              \"mkdir -p /home/ubuntu/app\",
+              \"cd /home/ubuntu/app\",
+              \"echo '${FILE_B64}' | base64 -d > app-files.tar.gz\",
+              \"tar -xzf app-files.tar.gz\",
+              \"rm app-files.tar.gz\",
+              \"echo 'ECR_REGISTRY=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com' > .env\",
+              \"echo 'RDS_ENDPOINT=${{ needs.terraform.outputs.rds_endpoint }}' >> .env\",
+              \"echo 'DB_HOST=${{ needs.terraform.outputs.rds_endpoint }}' >> .env\",
+              \"echo 'DB_USER=${{ secrets.DB_USER }}' >> .env\",
+              \"echo 'DB_PASSWORD=${{ secrets.DB_PASSWORD }}' >> .env\",
+              \"echo 'DB_NAME=${{ secrets.DB_NAME }}' >> .env\",
+              \"echo 'SECRET_KEY=${{ secrets.SECRET_KEY }}' >> .env\",
+              \"docker run --rm -e MYSQL_PWD='${{ secrets.DB_PASSWORD }}' -v /home/ubuntu/app/init.sql:/init.sql mysql:8.0 mysql -h ${{ needs.terraform.outputs.rds_endpoint }} -u ${{ secrets.DB_USER }} -D ${{ secrets.DB_NAME }} -e 'source /init.sql'\",
+              \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\",
+              \"docker compose pull\",
+              \"docker compose up -d --remove-orphans\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Dispatched SSM Command ID: $COMMAND_ID"
+
+          while true; do
+            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
+            echo "Current Command Status: $STATUS"
+            if [ "$STATUS" = "Success" ]; then
+              echo "Deployment successful across all ASG instances!"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "Deployment failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 10
+          done
