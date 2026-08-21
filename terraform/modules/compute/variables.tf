@@ -20,6 +20,6 @@ variable "alb_target_group_arn" {
 
 variable "instance_type" {
   type        = string
-  default     = "t3.micro"
+  default     = "t3.medium"
   description = "EC2 instance type for backend workloads"
 }
