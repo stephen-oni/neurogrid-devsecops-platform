@@ -32,12 +32,26 @@ app.config.update(
     SESSION_COOKIE_SECURE=True if is_production else False
 )
 
-# Global pool reference initialized lazily with retries
+# Global pool reference initialized lazily with retries and port parsing
 db_pool = None
 
 def get_db_pool():
     global db_pool
     if db_pool is None:
+        raw_db_host = os.getenv('DB_HOST', 'db')
+        db_port = 3306
+        
+        # Strip :3306 from RDS endpoint string if present to prevent error 2003
+        if ':' in raw_db_host:
+            parts = raw_db_host.split(':')
+            db_host = parts[0]
+            try:
+                db_port = int(parts[1])
+            except ValueError:
+                db_port = 3306
+        else:
+            db_host = raw_db_host
+
         retries = 5
         while retries > 0:
             try:
@@ -45,7 +59,8 @@ def get_db_pool():
                     pool_name="neurogrid_pool",
                     pool_size=10,
                     pool_reset_session=True,
-                    host=os.getenv('DB_HOST', 'db'),
+                    host=db_host,
+                    port=db_port,
                     user=os.getenv('DB_USER', 'root'),
                     password=os.getenv('DB_PASSWORD', 'dev_password_123'),
                     database=os.getenv('DB_NAME', 'neurogrid_db')
