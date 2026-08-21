@@ -29,6 +29,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
 
       - name: Initialize Terraform Working Directory
         run: terraform init
@@ -46,27 +47,13 @@ jobs:
           terraform apply -auto-approve -input=false
           terraform refresh
 
-          # Extract raw JSON values using jq to bypass Terraform sensitivity masking
-          ASG=$(terraform output -json | jq -r '.autoscaling_group_name.value // empty')
-          RDS=$(terraform output -json | jq -r '.rds_endpoint.value // empty')
-          S3=$(terraform output -json | jq -r '.frontend_s3_bucket_name.value // empty')
-          CF=$(terraform output -json | jq -r '.cloudfront_distribution_id.value // empty')
+          ASG=$(terraform output -raw autoscaling_group_name 2>/dev/null || true)
+          RDS=$(terraform output -raw rds_endpoint 2>/dev/null || true)
+          S3=$(terraform output -raw frontend_s3_bucket_name 2>/dev/null || true)
+          CF=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || true)
 
-          # Fallback: Query AWS RDS directly if Terraform output was suppressed
-          if [ -z "$RDS" ]; then
-            echo "Warning: Terraform output was empty. Querying AWS RDS directly..."
-            RDS=$(aws rds describe-db-instances \
-              --query "DBInstances[?DBInstanceStatus=='available'].Endpoint.Address" \
-              --output text | awk '{print $1}')
-          fi
-
-          echo "Extracted RDS Endpoint: $RDS"
-          echo "Extracted ASG Name: $ASG"
-
-          if [ -z "$RDS" ]; then
-            echo "CRITICAL ERROR: Failed to resolve RDS Endpoint."
-            exit 1
-          fi
+          echo "Captured ASG: $ASG"
+          echo "Captured RDS: $RDS"
 
           echo "asg_name=$ASG" >> "$GITHUB_OUTPUT"
           echo "rds_endpoint=$RDS" >> "$GITHUB_OUTPUT"
@@ -99,11 +86,19 @@ jobs:
 
       - name: Sync Static Web Assets to S3
         run: |
-          aws s3 sync ./frontend s3://${{ needs.terraform.outputs.s3_bucket }} --delete --exclude ".git*" --exclude "*.md"
+          S3_BUCKET="${{ needs.terraform.outputs.s3_bucket }}"
+          if [ -z "$S3_BUCKET" ]; then
+            S3_BUCKET=$(aws s3api list-buckets --query "Buckets[?contains(Name, 'neurogrid-frontend')].Name" --output text | awk '{print $1}')
+          fi
+          aws s3 sync ./frontend s3://$S3_BUCKET --delete --exclude ".git*" --exclude "*.md"
 
       - name: Purge CloudFront Edge Cache
         run: |
-          aws cloudfront create-invalidation --distribution-id ${{ needs.terraform.outputs.cloudfront_id }} --paths "/*"
+          CF_ID="${{ needs.terraform.outputs.cloudfront_id }}"
+          if [ -z "$CF_ID" ]; then
+            CF_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[0].Id" --output text)
+          fi
+          aws cloudfront create-invalidation --distribution-id $CF_ID --paths "/*"
 
   build-and-push:
     name: "Build & Push to ECR"
@@ -159,10 +154,29 @@ jobs:
       - name: Execute Deployment across ASG Nodes via SSM
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          
+          # Try using pipeline output first, then fallback directly to AWS CLI
           RDS_HOST="${{ needs.terraform.outputs.rds_endpoint }}"
-
           if [ -z "$RDS_HOST" ]; then
-            echo "ERROR: RDS Endpoint is empty. Stopping deployment."
+            echo "Pipeline rds_endpoint was empty. Querying AWS directly..."
+            RDS_HOST=$(aws rds describe-db-instances \
+              --query "DBInstances[0].Endpoint.Address" \
+              --output text)
+          fi
+
+          ASG_TARGET="${{ needs.terraform.outputs.asg_name }}"
+          if [ -z "$ASG_TARGET" ]; then
+            echo "Pipeline asg_name was empty. Querying AWS directly..."
+            ASG_TARGET=$(aws autoscaling describe-auto-scaling-groups \
+              --query "AutoScalingGroups[?contains(AutoScalingGroupName, 'neurogrid')].AutoScalingGroupName" \
+              --output text | awk '{print $1}')
+          fi
+
+          echo "Target ASG: $ASG_TARGET"
+          echo "Target RDS Endpoint: $RDS_HOST"
+
+          if [ -z "$RDS_HOST" ] || [ "$RDS_HOST" = "None" ]; then
+            echo "CRITICAL: Could not determine RDS Endpoint."
             exit 1
           fi
 
@@ -170,7 +184,7 @@ jobs:
           FILE_B64=$(base64 -w 0 app-files.tar.gz)
 
           COMMAND_ID=$(aws ssm send-command \
-            --targets "Key=tag:aws:autoscaling:groupName,Values=${{ needs.terraform.outputs.asg_name }}" \
+            --targets "Key=tag:aws:autoscaling:groupName,Values=${ASG_TARGET}" \
             --document-name "AWS-RunShellScript" \
             --comment "Fast Deploy NeuroGrid Services via Docker Compose" \
             --parameters commands="[
