@@ -1,5 +1,5 @@
 output "rds_endpoint" {
-  value       = module.database.db_endpoint
+  value       = nonsensitive(module.database.db_endpoint)
   description = "RDS MySQL Host Address"
 }
 
@@ -16,4 +16,9 @@ output "frontend_s3_bucket_name" {
 output "cloudfront_distribution_id" {
   value       = module.frontend.cloudfront_distribution_id
   description = "CloudFront distribution ID for cache invalidations"
+}
+
+output "cloudfront_domain_name" {
+  value       = module.frontend.cloudfront_domain_name
+  description = "Domain name / CDN URL of the CloudFront distribution"
 }

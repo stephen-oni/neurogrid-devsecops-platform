@@ -44,10 +44,22 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
           terraform apply -auto-approve -input=false
-          echo "asg_name=$(terraform output -raw autoscaling_group_name)" >> "$GITHUB_OUTPUT"
-          echo "rds_endpoint=$(terraform output -raw rds_endpoint)" >> "$GITHUB_OUTPUT"
-          echo "s3_bucket=$(terraform output -raw frontend_s3_bucket_name)" >> "$GITHUB_OUTPUT"
-          echo "cloudfront_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+          
+          # Force state refresh to ensure all output mappings are resolved
+          terraform refresh
+
+          ASG=$(terraform output -raw autoscaling_group_name)
+          RDS=$(terraform output -raw rds_endpoint)
+          S3=$(terraform output -raw frontend_s3_bucket_name)
+          CF=$(terraform output -raw cloudfront_distribution_id)
+
+          echo "Extracted RDS Endpoint: $RDS"
+          echo "Extracted ASG Name: $ASG"
+
+          echo "asg_name=$ASG" >> "$GITHUB_OUTPUT"
+          echo "rds_endpoint=$RDS" >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=$S3" >> "$GITHUB_OUTPUT"
+          echo "cloudfront_id=$CF" >> "$GITHUB_OUTPUT"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -135,6 +147,13 @@ jobs:
       - name: Execute Deployment across ASG Nodes via SSM
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          RDS_HOST="${{ needs.terraform.outputs.rds_endpoint }}"
+
+          if [ -z "$RDS_HOST" ]; then
+            echo "ERROR: RDS Endpoint is empty. Stopping deployment."
+            exit 1
+          fi
+
           tar -czf app-files.tar.gz docker-compose.yml init.sql monitoring/
           FILE_B64=$(base64 -w 0 app-files.tar.gz)
 
@@ -150,9 +169,17 @@ jobs:
               \"echo '${FILE_B64}' | base64 -d > app-files.tar.gz\",
               \"tar -xzf app-files.tar.gz\",
               \"rm -f app-files.tar.gz\",
-              \"printf 'ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\nRDS_ENDPOINT=${{ needs.terraform.outputs.rds_endpoint }}\nDB_HOST=${{ needs.terraform.outputs.rds_endpoint }}\nDB_USER=${{ secrets.DB_USER }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}\nDB_NAME=${{ secrets.DB_NAME }}\nSECRET_KEY=${{ secrets.SECRET_KEY }}\n' > .env\",
+              \"cat << 'EOF' > .env
+          ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          RDS_ENDPOINT=${RDS_HOST}
+          DB_HOST=${RDS_HOST}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          EOF\",
               \"which mysql >/dev/null 2>&1 || (DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-client)\",
-              \"mysql -h ${{ needs.terraform.outputs.rds_endpoint }} -u ${{ secrets.DB_USER }} -p'${{ secrets.DB_PASSWORD }}' ${{ secrets.DB_NAME }} < init.sql || true\",
+              \"mysql -h ${RDS_HOST} -u ${{ secrets.DB_USER }} -p'${{ secrets.DB_PASSWORD }}' ${{ secrets.DB_NAME }} < init.sql || true\",
               \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\",
               \"docker compose pull\",
               \"docker compose up -d --force-recreate --remove-orphans\",
