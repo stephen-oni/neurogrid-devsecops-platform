@@ -243,6 +243,7 @@ jobs:
 
           echo "Target Monitoring Instance ID: $MON_INSTANCE_ID"
 
+          # Tar everything inside the monitoring directory
           tar -czf monitoring-files.tar.gz -C monitoring docker-compose.yml prometheus.yml
           MON_FILE_B64=$(base64 -w 0 monitoring-files.tar.gz)
 
