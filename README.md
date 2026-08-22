@@ -14,7 +14,7 @@ An enterprise-grade, multi-tier web application and observability platform deplo
 
 ---
 
-## Architecture Overview
+## Architecture Overview.
 
 ![Pulse Architecture Diagram](architecture/photo.png) 
 
