@@ -306,7 +306,12 @@
                     body: JSON.stringify({ username, password })
                 });
 
-                const data = await response.json();
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonErr) {
+                    throw new Error(`Server returned HTTP ${response.status} (${response.statusText})`);
+                }
 
                 if (response.ok && data.status === 'success') {
                     alertBox.textContent = 'NEURAL SIGNATURE RECORDED. REDIRECTING TO SIGN IN...';
@@ -324,7 +329,7 @@
                     submitBtn.innerText = 'Authorize Neural Node';
                 }
             } catch (err) {
-                alertBox.textContent = 'CRITICAL ERROR: Unable to communicate with API gateway.';
+                alertBox.textContent = `CRITICAL ERROR: ${err.message}`;
                 alertBox.classList.add('alert-error');
                 alertBox.style.display = 'block';
                 submitBtn.disabled = false;

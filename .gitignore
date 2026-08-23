@@ -29,3 +29,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+
+#personal file.
+*.png
+!architecture/photo.png
+
+DO-NOT-PUSH/

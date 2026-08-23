@@ -293,10 +293,16 @@
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ username, password })
                 });
 
-                const data = await response.json();
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonErr) {
+                    throw new Error(`Server returned HTTP ${response.status} (${response.statusText})`);
+                }
 
                 if (response.ok && data.status === 'success') {
                     alertBox.textContent = 'SESSION GRANTED. INITIALIZING CLEARANCE FORM...';
@@ -314,7 +320,7 @@
                     submitBtn.innerText = 'Verify & Authenticate';
                 }
             } catch (err) {
-                alertBox.textContent = 'GATEWAY ERROR: Unable to contact API.';
+                alertBox.textContent = `GATEWAY ERROR: ${err.message}`;
                 alertBox.classList.add('alert-error');
                 alertBox.style.display = 'block';
                 submitBtn.disabled = false;

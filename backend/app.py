@@ -11,8 +11,8 @@ import datetime
 
 app = Flask(__name__)
 
-# Correctly handle headers (X-Forwarded-For, X-Forwarded-Proto) from ALB & CloudFront
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+# CloudFront (Hop 1) + ALB (Hop 2) -> set x_for=2 to trace back to real client IP
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=2, x_host=2)
 
 # Initialize Prometheus Metrics (Exposes /metrics)
 metrics = PrometheusMetrics(app)
@@ -115,7 +115,6 @@ def init_db():
         """)
 
         conn.commit()
-        print("Database schema successfully verified/initialized.")
     except Exception as e:
         print(f"Warning: Database initialization failed during boot: {e}")
     finally:
@@ -132,8 +131,10 @@ except Exception as e:
 
 def get_client_ip():
     """Extract real client IP passed through CloudFront and ALB."""
-    if request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    forwarded_for = request.headers.get('X-Forwarded-For')
+    if forwarded_for:
+        # Take the leftmost IP representing the actual user client origin
+        return forwarded_for.split(',')[0].strip()
     return request.headers.get('X-Real-IP', request.remote_addr)
 
 # HEALTH & METRICS 
@@ -148,7 +149,7 @@ def health():
 @app.route('/api/signup', methods=['POST'])
 def signup():
     """Handles new user registration and enforces 1 account per IP."""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     username = data.get('username')
     password = data.get('password')
 
@@ -165,7 +166,10 @@ def signup():
         # Enforce 1 account per IP
         cursor.execute("SELECT id FROM users WHERE ip_address = %s", (user_ip,))
         if cursor.fetchone():
-            return jsonify({"status": "error", "message": "An account has already been created from this IP address."}), 403
+            return jsonify({
+                "status": "error", 
+                "message": f"An account has already been created from this IP address ({user_ip})."
+            }), 403
             
         # Enforce unique username
         cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
@@ -193,7 +197,7 @@ def signup():
 @app.route('/api/login', methods=['POST'])
 def login():
     """Handles user authentication and enforces the 3-strike lockout rule."""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     username = data.get('username')
     password = data.get('password')
 
@@ -260,7 +264,7 @@ def submit_eligibility():
     if 'user' not in session:
         return jsonify({"status": "error", "message": "Unauthorized. Please sign in."}), 401
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     synapse_speed = int(data.get('synapse_speed_ms', 0))
     rejection_tolerance = int(data.get('rejection_tolerance_pct', 0))
     cortex_voltage = float(data.get('cortex_voltage', 0.0))
