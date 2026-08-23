@@ -47,7 +47,6 @@ jobs:
         run: |
           terraform apply -auto-approve -input=false
           terraform refresh
-
           ASG=$(terraform output -raw autoscaling_group_name 2>/dev/null || true)
           RDS=$(terraform output -raw rds_endpoint 2>/dev/null || true)
           S3=$(terraform output -raw frontend_s3_bucket_name 2>/dev/null || true)
@@ -135,8 +134,8 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy-backend:
-    name: "Deploy App to ASG via AWS SSM"
-    needs: [terraform, build-and-push, deploy-frontend]
+    name: "Deploy Backend via Ansible (SSM SSH Tunnel)"
+    needs: [terraform, build-and-push]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
@@ -151,17 +150,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Execute Deployment across ASG Nodes via SSM
+      - name: Setup SSH over SSM & Ephemeral Key
+        run: |
+          curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
+          sudo dpkg -i session-manager-plugin.deb
+          pipx install --include-deps ansible
+
+          mkdir -p ~/.ssh
+          ssh-keygen -t rsa -f ~/.ssh/id_rsa -N "" -q
+
+          cat << 'EOF' > ~/.ssh/config
+          Host i-* mi-*
+            ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+            User ubuntu
+            IdentityFile ~/.ssh/id_rsa
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+          chmod 600 ~/.ssh/config ~/.ssh/id_rsa
+
+      - name: Run Ansible Backend Playbook
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           
-          # 1. Resolve RDS Endpoint
-          RDS_HOST="${{ needs.terraform.outputs.rds_endpoint }}"
-          if [ -z "$RDS_HOST" ]; then
-            RDS_HOST=$(aws rds describe-db-instances --query "DBInstances[0].Endpoint.Address" --output text)
-          fi
+          RAW_RDS="${{ needs.terraform.outputs.rds_endpoint }}"
+          RDS_HOST=$(echo "$RAW_RDS" | cut -d: -f1)
 
-          # 2. Resolve ASG Name
           ASG_TARGET="${{ needs.terraform.outputs.asg_name }}"
           if [ -z "$ASG_TARGET" ]; then
             ASG_TARGET=$(aws autoscaling describe-auto-scaling-groups \
@@ -169,53 +183,37 @@ jobs:
               --output text | awk '{print $1}')
           fi
 
-          if [ -z "$RDS_HOST" ] || [ "$RDS_HOST" = "None" ]; then
-            echo "CRITICAL: Could not determine RDS Endpoint."
-            exit 1
-          fi
-
-          tar -czf app-files.tar.gz docker-compose.yml init.sql
-          FILE_B64=$(base64 -w 0 app-files.tar.gz)
-
-          COMMAND_ID=$(aws ssm send-command \
-            --targets "Key=tag:aws:autoscaling:groupName,Values=${ASG_TARGET}" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Deploy Application and Node Exporter to ASG" \
-            --parameters commands="[
-              \"export PATH=\$PATH:/usr/local/bin:/snap/bin\",
-              \"cloud-init status --wait\",
-              \"mkdir -p /home/ubuntu/app\",
-              \"cd /home/ubuntu/app\",
-              \"echo '${FILE_B64}' | base64 -d > app-files.tar.gz\",
-              \"tar -xzf app-files.tar.gz\",
-              \"rm -f app-files.tar.gz\",
-              \"printf 'ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\nRDS_ENDPOINT=${RDS_HOST}\nDB_HOST=${RDS_HOST}\nDB_USER=${{ secrets.DB_USER }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}\nDB_NAME=${{ secrets.DB_NAME }}\nSECRET_KEY=${{ secrets.SECRET_KEY }}\n' > .env\",
-              \"docker run --rm -v /home/ubuntu/app/init.sql:/init.sql:ro mysql:8.0 sh -c 'mysql -h ${RDS_HOST} -u ${{ secrets.DB_USER }} -p${{ secrets.DB_PASSWORD }} ${{ secrets.DB_NAME }} < /init.sql' || true\",
-              \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com\",
-              \"docker compose pull\",
-              \"docker compose up -d --force-recreate --remove-orphans\",
-              \"docker image prune -af --filter 'until=24h'\"
-            ]" \
-            --query "Command.CommandId" \
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_TARGET" \
+            --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService'].InstanceId" \
             --output text)
 
-          echo "Dispatched Backend ASG Command ID: $COMMAND_ID"
+          PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
 
-          while true; do
-            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
-            echo "Current Command Status: $STATUS"
-            if [ "$STATUS" = "Success" ]; then
-              echo "Backend deployment successful across all ASG instances!"
-              break
-            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
-              echo "Backend deployment failed with status: $STATUS"
-              exit 1
-            fi
-            sleep 10
+          > backend_hosts.ini
+          for id in $INSTANCE_IDS; do
+            CMD_ID=$(aws ssm send-command \
+              --instance-ids "$id" \
+              --document-name "AWS-RunShellScript" \
+              --parameters "commands=[\"mkdir -p /home/ubuntu/.ssh && chmod 700 /home/ubuntu/.ssh && echo '$PUB_KEY' >> /home/ubuntu/.ssh/authorized_keys && chmod 600 /home/ubuntu/.ssh/authorized_keys\"]" \
+              --query "Command.CommandId" \
+              --output text)
+
+            aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$id"
+            echo "$id" >> backend_hosts.ini
           done
 
+          ansible-playbook -i backend_hosts.ini ansible/deploy-backend.yml \
+            -e "ecr_registry=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com" \
+            -e "rds_host=${RDS_HOST}" \
+            -e "db_user=${{ secrets.DB_USER }}" \
+            -e "db_password=${{ secrets.DB_PASSWORD }}" \
+            -e "db_name=${{ secrets.DB_NAME }}" \
+            -e "secret_key=${{ secrets.SECRET_KEY }}" \
+            -e "aws_region=${{ secrets.AWS_REGION }}"
+
   deploy-monitoring:
-    name: "Deploy Monitoring Stack to Dedicated Host"
+    name: "Deploy Monitoring via Ansible (SSM SSH Tunnel)"
     needs: [terraform, deploy-backend]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -231,7 +229,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Execute Monitoring Deployment via SSM
+      - name: Setup SSH over SSM & Ephemeral Key
+        run: |
+          curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
+          sudo dpkg -i session-manager-plugin.deb
+          pipx install --include-deps ansible
+
+          mkdir -p ~/.ssh
+          ssh-keygen -t rsa -f ~/.ssh/id_rsa -N "" -q
+
+          cat << 'EOF' > ~/.ssh/config
+          Host i-* mi-*
+            ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+            User ubuntu
+            IdentityFile ~/.ssh/id_rsa
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+          chmod 600 ~/.ssh/config ~/.ssh/id_rsa
+
+      - name: Run Ansible Monitoring Playbook
         run: |
           MON_INSTANCE_ID="${{ needs.terraform.outputs.monitoring_instance_id }}"
           if [ -z "$MON_INSTANCE_ID" ]; then
@@ -241,40 +258,15 @@ jobs:
               --output text)
           fi
 
-          echo "Target Monitoring Instance ID: $MON_INSTANCE_ID"
-
-          # Tar everything inside the monitoring directory
-          tar -czf monitoring-files.tar.gz -C monitoring docker-compose.yml prometheus.yml
-          MON_FILE_B64=$(base64 -w 0 monitoring-files.tar.gz)
-
-          MON_CMD_ID=$(aws ssm send-command \
+          PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
+          CMD_ID=$(aws ssm send-command \
             --instance-ids "$MON_INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy Prometheus & Grafana to Monitoring Host" \
-            --parameters commands="[
-              \"export PATH=\$PATH:/usr/local/bin:/snap/bin\",
-              \"cloud-init status --wait\",
-              \"mkdir -p /home/ubuntu/monitoring\",
-              \"cd /home/ubuntu/monitoring\",
-              \"echo '${MON_FILE_B64}' | base64 -d > monitoring-files.tar.gz\",
-              \"tar -xzf monitoring-files.tar.gz\",
-              \"rm -f monitoring-files.tar.gz\",
-              \"docker compose up -d --remove-orphans\"
-            ]" \
+            --parameters "commands=[\"mkdir -p /home/ubuntu/.ssh && chmod 700 /home/ubuntu/.ssh && echo '$PUB_KEY' >> /home/ubuntu/.ssh/authorized_keys && chmod 600 /home/ubuntu/.ssh/authorized_keys\"]" \
             --query "Command.CommandId" \
             --output text)
 
-          echo "Dispatched Monitoring Host Command ID: $MON_CMD_ID"
+          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$MON_INSTANCE_ID"
 
-          while true; do
-            STATUS=$(aws ssm list-commands --command-id "$MON_CMD_ID" --query "Commands[0].Status" --output text)
-            echo "Current Command Status: $STATUS"
-            if [ "$STATUS" = "Success" ]; then
-              echo "Monitoring stack running cleanly on dedicated host!"
-              break
-            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
-              echo "Monitoring stack deployment failed with status: $STATUS"
-              exit 1
-            fi
-            sleep 10
-          done
+          echo "$MON_INSTANCE_ID" > mon_hosts.ini
+          ansible-playbook -i mon_hosts.ini ansible/deploy-monitoring.yml

@@ -1,0 +1,69 @@
+---
+- name: Deploy Neurogrid Backend and Node Exporter to ASG Nodes
+  hosts: all
+  become: yes
+  vars:
+    app_dir: "/home/ubuntu/app"
+
+  tasks:
+    - name: 1. Ensure remote Docker, Compose plugin, and AWS CLI are installed
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+          - awscli
+        state: present
+        update_cache: yes
+
+    - name: 2. Ensure application directory exists
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: 3. Copy Docker Compose and SQL initialization files
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../{{ item }}"
+        dest: "{{ app_dir }}/{{ item }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+      loop:
+        - docker-compose.yml
+        - init.sql
+
+    - name: 4. Create .env configuration file
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+        content: |
+          ECR_REGISTRY={{ ecr_registry }}
+          DB_HOST={{ rds_host }}
+          DB_USER={{ db_user }}
+          DB_PASSWORD={{ db_password }}
+          DB_NAME={{ db_name }}
+          SECRET_KEY={{ secret_key }}
+
+    - name: 5. Execute database schema initialization
+      ansible.builtin.command: >
+        docker run --rm -v {{ app_dir }}/init.sql:/init.sql:ro mysql:8.0
+        sh -c "mysql -h {{ rds_host }} -u {{ db_user }} -p{{ db_password }} {{ db_name }} < /init.sql"
+      failed_when: false
+
+    - name: 6. Authenticate Docker with Amazon ECR
+      ansible.builtin.shell: >
+        aws ecr get-login-password --region {{ aws_region }} |
+        docker login --username AWS --password-stdin {{ ecr_registry }}
+
+    - name: 7. Deploy Backend and Node Exporter via Compose
+      ansible.builtin.command:
+        cmd: docker compose up -d --pull always --remove-orphans
+        chdir: "{{ app_dir }}"
+
+    - name: 8. Prune stale images
+      ansible.builtin.command:
+        cmd: docker image prune -af --filter "until=24h"
