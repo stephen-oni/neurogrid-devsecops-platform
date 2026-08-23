@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, session
-import mysql.connector
-from mysql.connector import pooling
+import pymysql
+from dbutils.pooled_db import PooledDB
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from prometheus_flask_exporter import PrometheusMetrics
@@ -11,7 +11,7 @@ import datetime
 
 app = Flask(__name__)
 
-# CloudFront (Hop 1) + ALB (Hop 2) -> set x_for=2 to trace back to real client IP
+# CloudFront (Hop 1) + ALB (Hop 2) -> trace back to real client IP
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=2, x_host=2)
 
 # Initialize Prometheus Metrics (Exposes /metrics)
@@ -40,8 +40,11 @@ def get_db_pool():
     if db_pool is None:
         raw_db_host = os.getenv('DB_HOST', 'db').strip()
         db_port = 3306
-        
-        # Strip :3306 from RDS endpoint string if present
+
+        # Strip protocol or port suffixes if passed accidentally
+        if '://' in raw_db_host:
+            raw_db_host = raw_db_host.split('://')[1]
+
         if ':' in raw_db_host:
             parts = raw_db_host.split(':')
             db_host = parts[0].strip()
@@ -65,16 +68,20 @@ def get_db_pool():
         retries = 5
         while retries > 0:
             try:
-                db_pool = mysql.connector.pooling.MySQLConnectionPool(
-                    pool_name="neurogrid_pool",
-                    pool_size=10,
-                    pool_reset_session=True,
+                db_pool = PooledDB(
+                    creator=pymysql,
+                    maxconnections=10,
+                    mincached=2,
+                    maxcached=5,
+                    blocking=True,
                     host=str(db_host),
                     port=int(db_port),
                     user=str(db_user),
                     password=str(db_password),
                     database=str(db_name),
-                    connection_timeout=10
+                    cursorclass=pymysql.cursors.DictCursor,
+                    connect_timeout=10,
+                    autocommit=False
                 )
                 break
             except Exception as e:
@@ -87,51 +94,46 @@ def get_db_pool():
 def get_db_connection():
     """Fetches an active connection from the pool."""
     pool = get_db_pool()
-    return pool.get_connection()
+    return pool.connection()
 
 def init_db():
     """Automatically create required tables on startup if they do not exist."""
     conn = None
-    cursor = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        with conn.cursor() as cursor:
+            # Users table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(100) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    ip_address VARCHAR(45) NOT NULL,
+                    failed_attempts INT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
 
-        # Users table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                username VARCHAR(100) NOT NULL UNIQUE,
-                password VARCHAR(255) NOT NULL,
-                ip_address VARCHAR(45) NOT NULL,
-                failed_attempts INT DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        # Neural Assessments table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS neural_assessments (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                synapse_speed_ms INT NOT NULL,
-                rejection_tolerance_pct INT NOT NULL,
-                cortex_voltage DECIMAL(5,2) NOT NULL,
-                nanite_count INT NOT NULL,
-                compatibility_score INT NOT NULL,
-                implant_tier VARCHAR(100) NOT NULL,
-                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-        """)
-
+            # Neural Assessments table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS neural_assessments (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    synapse_speed_ms INT NOT NULL,
+                    rejection_tolerance_pct INT NOT NULL,
+                    cortex_voltage DECIMAL(5,2) NOT NULL,
+                    nanite_count INT NOT NULL,
+                    compatibility_score INT NOT NULL,
+                    implant_tier VARCHAR(100) NOT NULL,
+                    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+            """)
         conn.commit()
     except Exception as e:
         print(f"Warning: Database initialization failed during boot: {e}")
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 # Auto-initialize database tables on container start
@@ -168,40 +170,36 @@ def signup():
     
     user_ip = get_client_ip()
     conn = None
-    cursor = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        # Enforce 1 account per IP
-        cursor.execute("SELECT id FROM users WHERE ip_address = %s", (user_ip,))
-        if cursor.fetchone():
-            return jsonify({
-                "status": "error", 
-                "message": f"An account has already been created from this IP address ({user_ip})."
-            }), 403
-            
-        # Enforce unique username
-        cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-        if cursor.fetchone():
-            return jsonify({"status": "error", "message": "Username is already taken."}), 409
+        with conn.cursor() as cursor:
+            # Enforce 1 account per IP
+            cursor.execute("SELECT id FROM users WHERE ip_address = %s", (user_ip,))
+            if cursor.fetchone():
+                return jsonify({
+                    "status": "error", 
+                    "message": f"An account has already been created from this IP address ({user_ip})."
+                }), 403
+                
+            # Enforce unique username
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            if cursor.fetchone():
+                return jsonify({"status": "error", "message": "Username is already taken."}), 409
 
-        # Hash password securely
-        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-        
-        cursor.execute(
-            "INSERT INTO users (username, password, ip_address, failed_attempts) VALUES (%s, %s, %s, 0)", 
-            (username, hashed_password, user_ip)
-        )
+            # Hash password securely
+            hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+            
+            cursor.execute(
+                "INSERT INTO users (username, password, ip_address, failed_attempts) VALUES (%s, %s, %s, 0)", 
+                (username, hashed_password, user_ip)
+            )
         conn.commit()
         return jsonify({"status": "success", "message": "Account created successfully"}), 201
 
-    except mysql.connector.Error as err:
-        return jsonify({"status": "error", "message": f"Database Error: {err}"}), 500
+    except Exception as err:
+        return jsonify({"status": "error", "message": f"Database Error: {str(err)}"}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 @app.route('/api/login', methods=['POST'])
@@ -215,42 +213,39 @@ def login():
         return jsonify({"status": "error", "message": "Username and password are required."}), 400
     
     conn = None
-    cursor = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-        user = cursor.fetchone()
-        
-        if not user:
-            return jsonify({"status": "error", "message": "Invalid credentials. Please try again."}), 401
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return jsonify({"status": "error", "message": "Invalid credentials. Please try again."}), 401
 
-        # Account lockout check
-        if user['failed_attempts'] >= 3:
-            return jsonify({"status": "error", "message": "Account locked due to too many failed login attempts."}), 403
-            
-        # Password Verification
-        if bcrypt.check_password_hash(user['password'], password):
-            cursor.execute("UPDATE users SET failed_attempts = 0 WHERE username = %s", (username,))
-            conn.commit()
-            session['user'] = username
-            return jsonify({"status": "success", "message": "Logged in successfully"}), 200
-        else:
-            new_attempts = user['failed_attempts'] + 1
-            cursor.execute("UPDATE users SET failed_attempts = %s WHERE username = %s", (new_attempts, username))
-            conn.commit()
-            
-            if new_attempts >= 3:
+            # Account lockout check
+            if user['failed_attempts'] >= 3:
                 return jsonify({"status": "error", "message": "Account locked due to too many failed login attempts."}), 403
                 
-            return jsonify({"status": "error", "message": f"Invalid credentials. Failed attempts: {new_attempts}/3"}), 401
+            # Password Verification
+            if bcrypt.check_password_hash(user['password'], password):
+                cursor.execute("UPDATE users SET failed_attempts = 0 WHERE username = %s", (username,))
+                conn.commit()
+                session['user'] = username
+                return jsonify({"status": "success", "message": "Logged in successfully"}), 200
+            else:
+                new_attempts = user['failed_attempts'] + 1
+                cursor.execute("UPDATE users SET failed_attempts = %s WHERE username = %s", (new_attempts, username))
+                conn.commit()
+                
+                if new_attempts >= 3:
+                    return jsonify({"status": "error", "message": "Account locked due to too many failed login attempts."}), 403
+                    
+                return jsonify({"status": "error", "message": f"Invalid credentials. Failed attempts: {new_attempts}/3"}), 401
 
-    except mysql.connector.Error as err:
-        return jsonify({"status": "error", "message": f"Database Error: {err}"}), 500
+    except Exception as err:
+        return jsonify({"status": "error", "message": f"Database Error: {str(err)}"}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 @app.route('/api/user', methods=['GET'])
@@ -311,23 +306,21 @@ def submit_eligibility():
         implant_tier = "INCOMPATIBLE / NEURAL REJECTION RISK"
 
     conn = None
-    cursor = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM users WHERE username = %s", (session['user'],))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"status": "error", "message": "User not found."}), 404
 
-        cursor.execute("SELECT id FROM users WHERE username = %s", (session['user'],))
-        user_row = cursor.fetchone()
-        if not user_row:
-            return jsonify({"status": "error", "message": "User not found."}), 404
+            user_id = user_row['id']
 
-        user_id = user_row['id']
-
-        cursor.execute("""
-            INSERT INTO neural_assessments 
-            (user_id, synapse_speed_ms, rejection_tolerance_pct, cortex_voltage, nanite_count, compatibility_score, implant_tier) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (user_id, synapse_speed, rejection_tolerance, cortex_voltage, nanite_count, score, implant_tier))
+            cursor.execute("""
+                INSERT INTO neural_assessments 
+                (user_id, synapse_speed_ms, rejection_tolerance_pct, cortex_voltage, nanite_count, compatibility_score, implant_tier) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (user_id, synapse_speed, rejection_tolerance, cortex_voltage, nanite_count, score, implant_tier))
         conn.commit()
 
         return jsonify({
@@ -336,12 +329,10 @@ def submit_eligibility():
             "implant_tier": implant_tier
         }), 201
 
-    except mysql.connector.Error as err:
-        return jsonify({"status": "error", "message": f"Database Error: {err}"}), 500
+    except Exception as err:
+        return jsonify({"status": "error", "message": f"Database Error: {str(err)}"}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 @app.route('/api/eligibility/status', methods=['GET'])
@@ -351,17 +342,16 @@ def get_eligibility_status():
         return jsonify({"status": "error", "message": "Unauthorized. Please sign in."}), 401
 
     conn = None
-    cursor = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT na.* FROM neural_assessments na
-            JOIN users u ON na.user_id = u.id
-            WHERE u.username = %s
-            ORDER BY na.id DESC LIMIT 1
-        """, (session['user'],))
-        record = cursor.fetchone()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT na.* FROM neural_assessments na
+                JOIN users u ON na.user_id = u.id
+                WHERE u.username = %s
+                ORDER BY na.id DESC LIMIT 1
+            """, (session['user'],))
+            record = cursor.fetchone()
 
         if not record:
             return jsonify({"status": "error", "message": "No assessment records found."}), 404
@@ -374,12 +364,10 @@ def get_eligibility_status():
 
         return jsonify({"status": "success", "data": record}), 200
 
-    except mysql.connector.Error as err:
-        return jsonify({"status": "error", "message": f"Database Error: {err}"}), 500
+    except Exception as err:
+        return jsonify({"status": "error", "message": f"Database Error: {str(err)}"}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 if __name__ == '__main__':
