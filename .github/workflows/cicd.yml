@@ -1,6 +1,7 @@
 name: "CI/CD Pipeline"
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -43,7 +44,7 @@ jobs:
 
       - name: Apply Infrastructure Changes & Capture Outputs
         id: apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
         run: |
           terraform apply -auto-approve -input=false
           terraform refresh
@@ -69,7 +70,7 @@ jobs:
   deploy-frontend:
     name: "Deploy Frontend to S3 & Invalidate CloudFront"
     needs: terraform
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -102,7 +103,7 @@ jobs:
   build-and-push:
     name: "Build & Push to ECR"
     needs: terraform
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -136,7 +137,7 @@ jobs:
   deploy-backend:
     name: "Deploy Backend via Ansible (SSM SSH Tunnel)"
     needs: [terraform, build-and-push]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -233,7 +234,7 @@ jobs:
   deploy-monitoring:
     name: "Deploy Monitoring via Ansible (SSM SSH Tunnel)"
     needs: [terraform, deploy-backend]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -288,3 +289,67 @@ jobs:
 
           echo "$MON_INSTANCE_ID" > mon_hosts.ini
           ansible-playbook -i mon_hosts.ini ansible/deploy-monitoring.yml
+
+  notify-slack:
+    name: "Slack Notifcation"
+    needs: [deploy-frontend, deploy-backend, deploy-monitoring]
+    if: always() && ((github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Slack Push & Deployment Alert
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "NeuroGrid CI/CD Pipeline Notification",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 NeuroGrid Deployment & Commit Event",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Author:*\n${{ github.actor }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Event:*\n${{ github.event_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit SHA:*\n<${{ github.event.head_commit.url || format('{0}/commit/{1}', github.server_url, github.sha) }}|${{ github.sha }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Pipeline Result:*\n${{ (needs.deploy-frontend.result == 'success' && needs.deploy-backend.result == 'success' && needs.deploy-monitoring.result == 'success') && '✅ SUCCESS' || '❌ FAILED' }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Commit Message:*\n>${{ github.event.head_commit.message || 'Manual workflow execution via workflow_dispatch' }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
