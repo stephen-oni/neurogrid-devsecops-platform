@@ -6,15 +6,7 @@
     mon_dir: "/home/ubuntu/monitoring"
 
   tasks:
-    - name: 1. Ensure remote Docker CLI and Compose plugin are installed
-      ansible.builtin.apt:
-        name:
-          - docker.io
-          - docker-compose-v2
-        state: present
-        update_cache: yes
-
-    - name: 2. Ensure monitoring directory exists
+    - name: 1. Ensure monitoring directory exists
       ansible.builtin.file:
         path: "{{ mon_dir }}"
         state: directory
@@ -22,7 +14,7 @@
         group: ubuntu
         mode: '0755'
 
-    - name: 3. Copy Monitoring configuration files
+    - name: 2. Copy Monitoring configuration files
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../monitoring/{{ item }}"
         dest: "{{ mon_dir }}/{{ item }}"
@@ -33,7 +25,7 @@
         - docker-compose.yml
         - prometheus.yml
 
-    - name: 4. Launch Prometheus & Grafana stack
+    - name: 3. Launch Prometheus & Grafana stack
       ansible.builtin.command:
         cmd: docker compose up -d --pull always --remove-orphans
         chdir: "{{ mon_dir }}"

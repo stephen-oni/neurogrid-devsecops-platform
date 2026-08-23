@@ -6,12 +6,9 @@
     app_dir: "/home/ubuntu/app"
 
   tasks:
-    - name: 1. Ensure remote Docker, Compose plugin, and AWS CLI are installed
+    - name: 1. Ensure AWS CLI is installed
       ansible.builtin.apt:
-        name:
-          - docker.io
-          - docker-compose-v2
-          - awscli
+        name: awscli
         state: present
         update_cache: yes
 
