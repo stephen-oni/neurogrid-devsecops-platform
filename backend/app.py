@@ -38,19 +38,29 @@ db_pool = None
 def get_db_pool():
     global db_pool
     if db_pool is None:
-        raw_db_host = os.getenv('DB_HOST', 'db')
+        raw_db_host = os.getenv('DB_HOST', 'db').strip()
         db_port = 3306
         
-        # Strip :3306 from RDS endpoint string if present to prevent error 2003
+        # Strip :3306 from RDS endpoint string if present
         if ':' in raw_db_host:
             parts = raw_db_host.split(':')
-            db_host = parts[0]
+            db_host = parts[0].strip()
             try:
-                db_port = int(parts[1])
-            except ValueError:
+                db_port = int(parts[1].strip())
+            except (ValueError, IndexError):
                 db_port = 3306
         else:
             db_host = raw_db_host
+
+        if os.getenv('DB_PORT'):
+            try:
+                db_port = int(os.getenv('DB_PORT').strip())
+            except ValueError:
+                db_port = 3306
+
+        db_user = os.getenv('DB_USER', 'root').strip()
+        db_password = os.getenv('DB_PASSWORD', 'dev_password_123').strip()
+        db_name = os.getenv('DB_NAME', 'neurogrid_db').strip()
 
         retries = 5
         while retries > 0:
@@ -59,11 +69,12 @@ def get_db_pool():
                     pool_name="neurogrid_pool",
                     pool_size=10,
                     pool_reset_session=True,
-                    host=db_host,
-                    port=db_port,
-                    user=os.getenv('DB_USER', 'root'),
-                    password=os.getenv('DB_PASSWORD', 'dev_password_123'),
-                    database=os.getenv('DB_NAME', 'neurogrid_db')
+                    host=str(db_host),
+                    port=int(db_port),
+                    user=str(db_user),
+                    password=str(db_password),
+                    database=str(db_name),
+                    connection_timeout=10
                 )
                 break
             except Exception as e:
@@ -133,7 +144,6 @@ def get_client_ip():
     """Extract real client IP passed through CloudFront and ALB."""
     forwarded_for = request.headers.get('X-Forwarded-For')
     if forwarded_for:
-        # Take the leftmost IP representing the actual user client origin
         return forwarded_for.split(',')[0].strip()
     return request.headers.get('X-Real-IP', request.remote_addr)
 
