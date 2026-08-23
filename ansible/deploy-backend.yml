@@ -6,6 +6,15 @@
     app_dir: "/home/ubuntu/app"
 
   tasks:
+    - name: 0. Verify required variables are defined and not empty
+      ansible.builtin.assert:
+        that:
+          - rds_host is defined and rds_host | length > 0
+          - db_user is defined and db_user | length > 0
+          - db_password is defined and db_password | length > 0
+          - db_name is defined and db_name | length > 0
+        fail_msg: "CRITICAL: Database environment variables are missing or empty!"
+
     - name: 1. Ensure AWS CLI is installed
       ansible.builtin.apt:
         name: awscli

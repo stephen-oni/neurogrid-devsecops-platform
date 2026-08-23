@@ -173,9 +173,26 @@ jobs:
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           
-          RAW_RDS="${{ needs.terraform.outputs.rds_endpoint }}"
-          RDS_HOST=$(echo "$RAW_RDS" | cut -d: -f1)
+          # 1. Fallback-safe RDS Endpoint resolution
+          RDS_HOST="${{ needs.terraform.outputs.rds_endpoint }}"
+          if [ -z "$RDS_HOST" ]; then
+            RDS_HOST=$(aws rds describe-db-instances \
+              --query "DBInstances[?contains(DBInstanceIdentifier, 'neurogrid')].Endpoint.Address" \
+              --output text | awk '{print $1}')
+          fi
+          
+          if [ -z "$RDS_HOST" ]; then
+            RDS_HOST=$(aws rds describe-db-instances \
+              --query "DBInstances[0].Endpoint.Address" \
+              --output text)
+          fi
 
+          # Strip port suffix if present
+          RDS_HOST=$(echo "$RDS_HOST" | cut -d: -f1)
+
+          echo "Target RDS Endpoint: $RDS_HOST"
+
+          # 2. Extract ASG Target Instances
           ASG_TARGET="${{ needs.terraform.outputs.asg_name }}"
           if [ -z "$ASG_TARGET" ]; then
             ASG_TARGET=$(aws autoscaling describe-auto-scaling-groups \
@@ -203,6 +220,7 @@ jobs:
             echo "$id" >> backend_hosts.ini
           done
 
+          # 3. Execute Backend Playbook with Verified Parameters
           ansible-playbook -i backend_hosts.ini ansible/deploy-backend.yml \
             -e "ecr_registry=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com" \
             -e "rds_host=${RDS_HOST}" \
