@@ -32,6 +32,8 @@ Thumbs.db
 
 #personal file.
 *.png
+*.gif
+*.mp4
 !architecture/photo.png
 
 DO-NOT-PUSH/
